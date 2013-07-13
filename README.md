@@ -1,7 +1,7 @@
-smartq
+SmartQ
 ======
 
-A non-AMQP compliant task queing framework. Can have any backing store but ships with In-Memory and Redis (Redis for distributed working queue)
+A java task queing framework. Can have any backing store (just implement another TaskStore) but ships with In-Memory and Redis (for distributed queues)
 
 Features
 ========
