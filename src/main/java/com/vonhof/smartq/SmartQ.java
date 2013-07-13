@@ -1,12 +1,15 @@
 package com.vonhof.smartq;
 
+import org.apache.log4j.Logger;
+
 import java.io.Serializable;
-import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SmartQ<T extends Task,U extends Serializable>  {
+
+    private static final Logger log = Logger.getLogger(SmartQ.class);
 
     private final Map<String, Integer> taskTypeRateLimits = new ConcurrentHashMap<String, Integer>();
 
@@ -137,10 +140,8 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     
     public boolean submit(T task) {
 
-        synchronized (store) {
-            store.queue(task);
-            store.notifyAll();
-        }
+        store.queue(task);
+        store.signalChange();
 
         return true;
     }
@@ -151,7 +152,9 @@ public class SmartQ<T extends Task,U extends Serializable>  {
             return false;
         }
 
+        log.debug("Cancelled task");
         store.remove(task);
+        store.signalChange();
 
         return true;
     }
@@ -165,25 +168,30 @@ public class SmartQ<T extends Task,U extends Serializable>  {
 
         task.setState(Task.State.DONE);
         task.setEnded(WatchProvider.currentTime());
-        store.remove(task);
+        synchronized (store) {
+            log.debug("Acked task");
+            store.remove(task);
+            store.signalChange();
+        }
     }
 
     
     public T acquire(String taskType) throws InterruptedException {
+        store.lock();
 
-        T selectedTask = null;
+        try {
+            T selectedTask = null;
 
-        while(selectedTask == null) {
-            CountMap<String> tasksRunning = new CountMap<String>();
+            while(selectedTask == null) {
+                CountMap<String> tasksRunning = new CountMap<String>();
+                log.debug(String.format("Running tasks: %s", store.runningCount()));
 
-            synchronized (this) {
                 for(T task : store.getRunning()) {
-
                     tasksRunning.increment(task.getType(), 1);
                 }
-            }
 
-            synchronized (store) {
+                log.debug(String.format("Queue size: %s", store.queueSize()));
+
                 for(T task : store.getQueued()) {
                     if (taskType != null && !task.getType().equals(taskType)) {
                         continue;
@@ -202,23 +210,30 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                     selectedTask = task;
                 }
 
+
                 if (selectedTask == null) {
-                    store.wait();
+                    log.debug("Waiting for tasks");
+                    store.waitForChange();
+                    log.debug("Woke up!");
                 }  else {
+                    log.debug("Acquired task");
                     break;
                 }
             }
-        }
 
-        synchronized (this) {
-            if (selectedTask != null) {
-                selectedTask.setState(Task.State.RUNNING);
-                selectedTask.setStarted(WatchProvider.currentTime());
-                store.run(selectedTask);
+            synchronized (this) {
+                if (selectedTask != null) {
+                    selectedTask.setState(Task.State.RUNNING);
+                    selectedTask.setStarted(WatchProvider.currentTime());
+                    store.run(selectedTask);
+                }
             }
-        }
 
-        return selectedTask;
+            return selectedTask;
+        } finally {
+            log.debug("Unlocking queue");
+            store.unlock();
+        }
     }
 
 

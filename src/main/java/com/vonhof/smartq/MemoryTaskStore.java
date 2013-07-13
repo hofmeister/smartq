@@ -2,12 +2,16 @@ package com.vonhof.smartq;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     private final Map<UUID, T> tasks = new ConcurrentHashMap<UUID, T>();
     private final List<T> queued = Collections.synchronizedList(new LinkedList<T>());
     private final List<T> running = Collections.synchronizedList(new LinkedList<T>());
+
+    private final Lock lock = new ReentrantLock();
 
 
     @Override
@@ -55,5 +59,25 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public long runningCount() {
         return running.size();
+    }
+
+    @Override
+    public void unlock() {
+        lock.unlock();
+    }
+
+    @Override
+    public void lock() {
+        lock.lock();
+    }
+
+    @Override
+    public synchronized void waitForChange() throws InterruptedException {
+        this.wait();
+    }
+
+    @Override
+    public synchronized void signalChange() {
+        this.notifyAll();
     }
 }

@@ -17,6 +17,8 @@ public class Task<T extends Serializable> implements Serializable {
     private long started = 0;
     private long ended = 0;
 
+    private int priority = 1;
+
     private T data;
 
     public Task() {

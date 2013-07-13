@@ -8,9 +8,16 @@ import static org.junit.Assert.*;
 
 public class SmartQTest {
 
-    protected SmartQ<Task,DefaultTaskResult> makeQueue() {
-        return new SmartQ<Task, DefaultTaskResult>(new MemoryTaskStore<Task>());
+    protected TaskStore<Task> makeStore() {
+        return new MemoryTaskStore<Task>();
+    }
 
+    protected SmartQ<Task,DefaultTaskResult> makeQueue() {
+        return new SmartQ<Task, DefaultTaskResult>(makeStore());
+    }
+
+    protected SmartQ<Task,DefaultTaskResult> makeNode(TaskStore<Task> store) {
+        return new SmartQ<Task, DefaultTaskResult>(store);
     }
 
     @Test
@@ -44,6 +51,7 @@ public class SmartQTest {
 
         assertEquals(task.getState(),Task.State.PENDING);
     }
+
 
     @Test
     public void tasks_can_be_rate_limited_by_type() throws InterruptedException {
@@ -205,6 +213,173 @@ public class SmartQTest {
 
         assertEquals("ETA is updated when task is ack'ed", 3000L, queue.getEstimatedTimeLeft());
 
+    }
+
+
+    @Test
+    public void queue_handles_concurrent_acquire() throws InterruptedException {
+        final TaskStore<Task> store = makeStore();
+
+        SmartQ<Task,DefaultTaskResult> queue1 = makeNode(store);
+        SmartQ<Task,DefaultTaskResult> queue2 = makeNode(store);
+        SmartQ<Task,DefaultTaskResult> queue3 = makeNode(store);
+
+        queue1.setTaskTypeRateLimit("test",1);
+        queue2.setTaskTypeRateLimit("test",1);
+        queue3.setTaskTypeRateLimit("test",1);
+
+        Task task1 = new Task("test",1000);
+        Task task2 = new Task("test",2000);
+        Task task3 = new Task("test",1000);
+        Task task4 = new Task("test",2000);
+
+        queue1.submit(task1);
+        queue1.submit(task2);
+        queue1.submit(task3);
+        queue1.submit(task4);
+
+        assertEquals(queue1.size(),4);
+        assertEquals(queue2.size(),4);
+        assertEquals(queue3.size(),4);
+
+        ThreadedConsumer consumer1 = new ThreadedConsumer(queue1,"queue1");
+        ThreadedConsumer consumer2 = new ThreadedConsumer(queue2,"queue2");
+        ThreadedConsumer consumer3 = new ThreadedConsumer(queue3,"queue3");
+
+        consumer1.start();
+        consumer1.join();
+
+        consumer2.start();
+
+        assertTrue("Consumer 1 is done", consumer1.isDone());
+        assertFalse("Consumer 2 is waiting for ack", consumer2.isDone());
+        assertFalse("Consumer 3 is waiting for ack",consumer3.isDone());
+
+        queue2.acknowledge(consumer1.getTask().getId());
+
+        assertEquals(queue3.size(),3);
+
+        consumer2.join();
+
+        consumer3.start();
+
+        assertTrue("Consumer 2 is done", consumer2.isDone());
+        assertFalse("Consumer 3 is waiting for ack",consumer3.isDone());
+
+        queue3.acknowledge(consumer2.getTask().getId());
+
+        assertEquals(queue3.size(),2);
+
+        consumer3.join();
+        assertTrue("Consumer 3 is done", consumer3.isDone());
+
+
+    }
+
+    private static class ThreadedConsumer extends Thread {
+        private final SmartQ<Task,DefaultTaskResult> queue;
+        private boolean done = false;
+        private Task task;
+
+        private ThreadedConsumer(SmartQ<Task, DefaultTaskResult> queue,String name) {
+            super(name);
+            this.queue = queue;
+        }
+
+        @Override
+        public void run() {
+            try {
+                task = queue.acquire();
+                done = true;
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        private boolean isDone() {
+            return done;
+        }
+
+        private Task getTask() {
+            return task;
+        }
+    }
+
+    @Test
+    public void can_lock_and_unlock() throws InterruptedException {
+        TaskStore<Task> store = makeStore();
+
+        ThreadedLocker locker = new ThreadedLocker(store);
+        store.lock();
+
+        locker.start();
+
+        assertFalse("Locker is not done - waiting for unlock",locker.isDone());
+
+        store.unlock();
+
+        locker.join();
+
+        assertTrue("Locker is done", locker.isDone());
+    }
+
+    @Test
+    public void can_wait_and_wakeup() throws InterruptedException {
+        TaskStore<Task> store = makeStore();
+
+        ThreadedLocker locker = new ThreadedLocker(store);
+
+        locker.start();
+
+        assertFalse("Locker is not done - waiting for signal", locker.isDone());
+
+        store.signalChange();
+
+        locker.join();
+
+        assertTrue("Locker is done", locker.isDone());
+    }
+
+    private static class ThreadedWaiter extends Thread {
+        private final TaskStore<Task> store;
+        private boolean done;
+
+        private ThreadedWaiter(TaskStore<Task> store) {
+            this.store = store;
+        }
+
+        @Override
+        public void run() {
+            try {
+                store.waitForChange();
+                done = true;
+            } catch (InterruptedException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            }
+        }
+
+        private boolean isDone() {
+            return done;
+        }
+    }
+
+    private static class ThreadedLocker extends Thread {
+        private final TaskStore<Task> store;
+        private boolean done;
+
+        private ThreadedLocker(TaskStore<Task> store) {
+            this.store = store;
+        }
+
+        @Override
+        public void run() {
+            store.lock();
+            done = true;
+        }
+
+        private boolean isDone() {
+            return done;
+        }
     }
 
 

@@ -49,4 +49,7 @@ public class RedisTaskStoreTest {
 
         assertNull("Task can not be fetched", store.get(t.getId()));
     }
+
+
+
 }

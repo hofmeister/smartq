@@ -23,4 +23,12 @@ public interface TaskStore<T extends Task> {
     public long queueSize();
 
     public long runningCount();
+
+    public void unlock();
+
+    public void lock();
+
+    public void waitForChange() throws InterruptedException;
+
+    public void signalChange();
 }

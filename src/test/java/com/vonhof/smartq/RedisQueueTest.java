@@ -7,13 +7,14 @@ import java.util.UUID;
 
 public class RedisQueueTest extends SmartQTest {
 
+
     @Override
-    protected SmartQ<Task, DefaultTaskResult> makeQueue() {
+    protected TaskStore<Task> makeStore() {
         Jedis jedis = new Jedis("localhost");
-        RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis,Task.class);
-        store.setNamespace(UUID.randomUUID().toString().replaceAll("(?uis)[^A-Z0-9]","")+"/");
+        RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis, Task.class);
+
         store.reset();
 
-        return new SmartQ<Task, DefaultTaskResult>(store);
+        return store;
     }
 }
