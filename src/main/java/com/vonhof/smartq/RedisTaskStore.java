@@ -8,6 +8,7 @@ import redis.clients.jedis.JedisPubSub;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class RedisTaskStore<T extends Task> implements TaskStore<T> {
@@ -64,7 +65,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
     private List<T> readTasks(String listId) {
         synchronized (jedis) {
-            List<String> ids = jedis.lrange(key(listId), 0, 200);
+            Set<String> ids = jedis.zrevrange(key(listId), 0, 200);
             List<T> tasks = new LinkedList<T>();
             if (ids.isEmpty()) {
                 return tasks;
@@ -89,7 +90,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
     private void clearList(String listId) {
         synchronized (jedis) {
-            List<String> ids = jedis.lrange(key(listId), 0, Integer.MAX_VALUE);
+            Set<String> ids = jedis.zrevrange(key(listId), 0, Integer.MAX_VALUE);
             jedis.del(key(listId));
 
             if (ids.isEmpty()) {
@@ -125,8 +126,8 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     public void remove(UUID id) {
         synchronized (jedis) {
             jedis.del(docId(id));
-            jedis.lrem(key(queueList), 100, docId(id));
-            jedis.lrem(key(runningList), 100, docId(id));
+            jedis.zrem(key(queueList), docId(id));
+            jedis.zrem(key(runningList), docId(id));
         }
     }
 
@@ -134,7 +135,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     public void queue(T task) {
         writeTask(task);
         synchronized (jedis) {
-            jedis.rpush(key(queueList),docId(task.getId()));
+            jedis.zadd(key(queueList),task.getPriority(),docId(task.getId()));
         }
 
     }
@@ -143,8 +144,8 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     public void run(T task) {
         writeTask(task);
         synchronized (jedis) {
-            jedis.lrem(key(queueList),100,docId(task.getId()));
-            jedis.rpush(key(runningList),docId(task.getId()));
+            jedis.zrem(key(queueList),docId(task.getId()));
+            jedis.zadd(key(runningList),task.getPriority(),docId(task.getId()));
         }
     }
 
@@ -161,14 +162,14 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public long queueSize() {
         synchronized (jedis) {
-            return jedis.llen(key(queueList));
+            return jedis.zcard(key(queueList));
         }
     }
 
     @Override
     public long runningCount() {
         synchronized (jedis) {
-            return jedis.llen(key(runningList));
+            return jedis.zcard(key(runningList));
         }
     }
 

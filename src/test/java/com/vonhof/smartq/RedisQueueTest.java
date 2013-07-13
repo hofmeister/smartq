@@ -12,7 +12,7 @@ public class RedisQueueTest extends SmartQTest {
     protected TaskStore<Task> makeStore() {
         Jedis jedis = new Jedis("localhost");
         RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis, Task.class);
-
+        store.setNamespace(UUID.randomUUID().toString()+"/");
         store.reset();
 
         return store;

@@ -36,6 +36,30 @@ public class SmartQTest {
     }
 
     @Test
+    public void tasks_can_be_prioritized() throws InterruptedException {
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+
+        Task notImportantTask1 = new Task("test").withPriority(1);
+        Task notImportantTask2 = new Task("test").withPriority(1);
+        Task notImportantTask3 = new Task("test").withPriority(1);
+        Task notImportantTask4 = new Task("test").withPriority(1);
+        Task notImportantTask5 = new Task("test").withPriority(1);
+        Task importantTask = new Task("test").withPriority(10);
+
+        queue.submit(notImportantTask1);
+        queue.submit(notImportantTask2);
+        queue.submit(notImportantTask3);
+        queue.submit(importantTask);
+        queue.submit(notImportantTask4);
+        queue.submit(notImportantTask5);
+
+
+        assertEquals(6,queue.size());
+
+        assertEquals("Task with highest prio comes first",10,queue.acquire().getPriority());
+    }
+
+    @Test
     public void tasks_can_be_cancelled() throws InterruptedException {
         SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
@@ -94,10 +118,10 @@ public class SmartQTest {
 
         queue.setTaskTypeRateLimit("test",2);
 
-        Task task1 = new Task("test2");
-        Task task2 = new Task("test");
-        Task task3 = new Task("test");
-        Task task4 = new Task("test");
+        Task task1 = new Task("test").withPriority(4);
+        Task task2 = new Task("test").withPriority(3);
+        Task task3 = new Task("test2").withPriority(2);
+        Task task4 = new Task("test").withPriority(1);
 
         queue.submit(task1);
         queue.submit(task2);

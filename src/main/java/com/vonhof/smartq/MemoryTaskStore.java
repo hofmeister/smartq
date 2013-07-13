@@ -35,6 +35,17 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     public void queue(T task) {
         tasks.put(task.getId(),task);
         queued.add(task);
+
+        Collections.sort(queued,new Comparator<T>() {
+            @Override
+            public int compare(T t, T t2) {
+                int diffPrio = t2.getPriority()-t.getPriority();
+                if (diffPrio == 0) {
+                    return (int) ( (t.getCreated() / 1000L) - (t2.getCreated() / 1000L) );
+                }
+                return diffPrio;
+            }
+        });
     }
 
     @Override

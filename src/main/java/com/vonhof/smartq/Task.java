@@ -14,6 +14,7 @@ public class Task<T extends Serializable> implements Serializable {
     private long estimatedDuration;
     private long actualDuration;
     private State state = State.PENDING;
+    private long created = 0;
     private long started = 0;
     private long ended = 0;
 
@@ -25,6 +26,11 @@ public class Task<T extends Serializable> implements Serializable {
         this("");
     }
 
+    public Task withPriority(int priority) {
+        setPriority(priority);
+        return this;
+    }
+
     public Task(String type, long estimatedDuration) {
         this(type);
         this.estimatedDuration = estimatedDuration;
@@ -33,6 +39,7 @@ public class Task<T extends Serializable> implements Serializable {
     public Task(String type) {
         this.id = UUID.randomUUID();
         this.type = type;
+        this.created = WatchProvider.currentTime();
     }
 
     public void setId(UUID id) {
@@ -41,6 +48,22 @@ public class Task<T extends Serializable> implements Serializable {
 
     public void setType(String type) {
         this.type = type;
+    }
+
+    public int getPriority() {
+        return priority;
+    }
+
+    public void setPriority(int priority) {
+        this.priority = priority;
+    }
+
+    public long getCreated() {
+        return created;
+    }
+
+    public void setCreated(long created) {
+        this.created = created;
     }
 
     public UUID getId() {

@@ -208,6 +208,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                     }
 
                     selectedTask = task;
+                    break;
                 }
 
 
