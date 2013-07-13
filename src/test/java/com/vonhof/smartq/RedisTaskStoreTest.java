@@ -24,7 +24,7 @@ public class RedisTaskStoreTest {
     public void can_add_and_remove() {
         RedisTaskStore<Task> store = makeStore();
 
-        assertEquals("Queue is empty",0,store.queueSize());
+        assertEquals("SmartQ is empty",0,store.queueSize());
         assertEquals("Running is empty",0,store.runningCount());
 
 

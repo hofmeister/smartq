@@ -6,16 +6,16 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 
-public class DefaultQueueTest {
+public class SmartQTest {
 
-    protected Queue<Task,DefaultTaskResult> makeQueue() {
-        return new DefaultQueue<Task, DefaultTaskResult>(new MemoryTaskStore<Task>());
+    protected SmartQ<Task,DefaultTaskResult> makeQueue() {
+        return new SmartQ<Task, DefaultTaskResult>(new MemoryTaskStore<Task>());
 
     }
 
     @Test
     public void tasks_can_be_added_and_acquired() throws InterruptedException {
-        Queue<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
@@ -30,7 +30,7 @@ public class DefaultQueueTest {
 
     @Test
     public void tasks_can_be_cancelled() throws InterruptedException {
-        Queue<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
@@ -47,7 +47,7 @@ public class DefaultQueueTest {
 
     @Test
     public void tasks_can_be_rate_limited_by_type() throws InterruptedException {
-        Queue<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         queue.setTaskTypeRateLimit("test",2);
 
@@ -82,7 +82,7 @@ public class DefaultQueueTest {
 
     @Test
     public void tasks_with_different_type_is_not_rate_limited() throws InterruptedException {
-        Queue<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         queue.setTaskTypeRateLimit("test",2);
 
@@ -119,7 +119,7 @@ public class DefaultQueueTest {
 
     @Test
     public void can_do_simple_estimations() throws InterruptedException {
-        Queue<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a",1000);
         Task task2 = new Task("a",1000);
@@ -142,7 +142,7 @@ public class DefaultQueueTest {
 
     @Test
     public void can_do_consumer_based_estimations() throws InterruptedException {
-        Queue<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a",1000);
         Task task2 = new Task("a",1000);
@@ -171,7 +171,7 @@ public class DefaultQueueTest {
 
         WatchProvider.currentTime(0); //Override time - to have better control
 
-        Queue<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         queue.setTaskTypeRateLimit("a",1);
 
@@ -209,10 +209,10 @@ public class DefaultQueueTest {
 
 
     private static class ThreadedRunner extends Thread {
-        private final Queue<Task,DefaultTaskResult> queue;
+        private final SmartQ<Task,DefaultTaskResult> queue;
         private boolean done;
 
-        private ThreadedRunner(Queue<Task, DefaultTaskResult> queue) {
+        private ThreadedRunner(SmartQ<Task, DefaultTaskResult> queue) {
             this.queue = queue;
         }
 
