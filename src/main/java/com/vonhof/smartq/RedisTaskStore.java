@@ -1,9 +1,9 @@
 package com.vonhof.smartq;
 
 import org.apache.log4j.Logger;
-import org.codehaus.jackson.map.ObjectMapper;
-import redis.clients.jedis.*;
-import redis.clients.jedis.exceptions.JedisException;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPubSub;
 
 import java.io.IOException;
 import java.util.LinkedList;
@@ -21,7 +21,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         }
     };
 
-    private ObjectMapper om = new ObjectMapper();
+
     private final JedisPool jedisPool;
 
     private final Class<T> taskClass;
@@ -31,6 +31,8 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     private String namespace = "smartq/";
 
     private final String lockMutux = "LOCK_MUTEX";
+
+    private DocumentSerializer documentSerializer = new JacksonDocumentSerializer();
 
     public RedisTaskStore(JedisPool jedis,Class<T> taskClass) {
         this.jedisPool = jedis;
@@ -53,6 +55,10 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         return namespace + key;
     }
 
+    public void setDocumentSerializer(DocumentSerializer documentSerializer) {
+        this.documentSerializer = documentSerializer;
+    }
+
     private T readTask(UUID id) {
         final Jedis jedis = jedisPool.getResource();
         try {
@@ -61,7 +67,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
                 return null;
             }
             try {
-                return om.readValue(json, taskClass);
+                return documentSerializer.deserialize(json, taskClass);
             } catch (IOException e) {
                 log.warn("Could not read task doc",e);
             }
@@ -87,7 +93,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
                     throw new NullPointerException("Task was null");
                 }
                 try {
-                    T task = om.readValue(doc, taskClass);
+                    T task = documentSerializer.deserialize(doc, taskClass);
                     tasks.add(task);
                 } catch (IOException e) {
                     log.warn("Could not read json doc",e );
@@ -117,7 +123,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
     private void writeTask(T task,Jedis jedis) {
         try {
-            jedis.set(docId(task.getId()), om.writeValueAsString(task));
+            jedis.set(docId(task.getId()), documentSerializer.serialize(task));
         } catch (IOException e) {
             log.warn("Could not write task doc",e);
         }
