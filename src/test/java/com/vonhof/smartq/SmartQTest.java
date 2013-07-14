@@ -78,6 +78,26 @@ public class SmartQTest {
 
 
     @Test
+    public void tasks_can_be_rescheduled() throws InterruptedException {
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+
+        Task task = new Task("test");
+
+        queue.submit(task);
+
+        assertEquals(queue.queueSize(),1);
+
+        queue.cancel(task, true);
+
+        assertEquals(queue.queueSize(),1);
+
+        queue.acquire();
+
+        assertEquals(task.getState(),Task.State.RUNNING);
+    }
+
+
+    @Test
     public void tasks_can_be_rate_limited_by_type() throws InterruptedException {
         SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 

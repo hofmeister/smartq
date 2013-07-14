@@ -42,6 +42,13 @@ public class Task<T extends Serializable> implements Serializable {
         this.created = WatchProvider.currentTime();
     }
 
+    public void reset() {
+        this.created = WatchProvider.currentTime();
+        started = 0;
+        ended = 0;
+        state = State.PENDING;
+    }
+
     public void setId(UUID id) {
         this.id = id;
     }
@@ -143,6 +150,8 @@ public class Task<T extends Serializable> implements Serializable {
     public void setData(T data) {
         this.data = data;
     }
+
+
 
 
     public static enum State {

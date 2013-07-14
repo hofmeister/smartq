@@ -205,8 +205,11 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         return true;
     }
 
-    
     public synchronized boolean cancel(T task) throws InterruptedException {
+        return cancel(task, false);
+    }
+    
+    public synchronized boolean cancel(T task, boolean reschedule) throws InterruptedException {
         if (getStore().get(task.getId()).isRunning()) {
             return false;
         }
@@ -216,9 +219,15 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         try {
             log.debug("Cancelled task");
             getStore().remove(task);
-            getStore().signalChange();
 
-            triggerDone(task);
+
+            if (reschedule) {
+                task.reset();
+                submit(task);
+            } else {
+                getStore().signalChange();
+                triggerDone(task);
+            }
         } finally {
             getStore().unlock();
         }
