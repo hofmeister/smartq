@@ -205,11 +205,11 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         return true;
     }
 
-    public synchronized boolean cancel(T task) throws InterruptedException {
+    public boolean cancel(T task) throws InterruptedException {
         return cancel(task, false);
     }
     
-    public synchronized boolean cancel(T task, boolean reschedule) throws InterruptedException {
+    public boolean cancel(T task, boolean reschedule) throws InterruptedException {
         if (getStore().get(task.getId()).isRunning()) {
             return false;
         }
@@ -220,11 +220,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
             log.debug("Cancelled task");
             getStore().remove(task);
 
-
-            if (reschedule) {
-                task.reset();
-                submit(task);
-            } else {
+            if (!reschedule) {
                 getStore().signalChange();
                 triggerDone(task);
             }
@@ -232,11 +228,16 @@ public class SmartQ<T extends Task,U extends Serializable>  {
             getStore().unlock();
         }
 
+        if (reschedule) {
+            task.reset();
+            submit(task);
+        }
+
         return true;
     }
 
     
-    public synchronized void acknowledge(UUID id, U response) throws InterruptedException {
+    public void acknowledge(UUID id, U response) throws InterruptedException {
             T task = getStore().get(id);
             if (task == null) {
                 throw new IllegalArgumentException("Task not found: " + id);

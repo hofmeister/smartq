@@ -91,7 +91,7 @@ public class SmartQTest {
 
         assertEquals(queue.queueSize(),1);
 
-        queue.acquire();
+        task = queue.acquire();
 
         assertEquals(task.getState(),Task.State.RUNNING);
     }
