@@ -3,6 +3,8 @@ package com.vonhof.smartq;
 
 import org.junit.Test;
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.UUID;
 
@@ -13,7 +15,10 @@ import static org.junit.Assert.assertNull;
 public class RedisTaskStoreTest {
 
     private RedisTaskStore<Task> makeStore() {
-        Jedis jedis = new Jedis("localhost");
+        JedisPoolConfig jedisPoolConfig = new JedisPoolConfig();
+        jedisPoolConfig.setMaxActive(1);
+
+        final JedisPool jedis = new JedisPool(new JedisPoolConfig(),"localhost",6379,0);
         RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis,Task.class);;
         store.setNamespace(UUID.randomUUID().toString().replaceAll("(?uis)[^A-Z0-9]","")+"/");
         store.reset();

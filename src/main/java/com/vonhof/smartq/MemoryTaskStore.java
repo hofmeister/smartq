@@ -15,25 +15,26 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
 
 
     @Override
-    public T get(UUID id) {
+    public synchronized T get(UUID id) {
         return tasks.get(id);
     }
 
     @Override
-    public void remove(Task task) {
+    public synchronized void remove(Task task) {
         tasks.remove(task.getId());
         queued.remove(task);
         running.remove(task);
     }
 
     @Override
-    public void remove(UUID id) {
+    public synchronized void remove(UUID id) {
         tasks.remove(id);
     }
 
     @Override
-    public void queue(T task) {
+    public synchronized void queue(T task) {
         tasks.put(task.getId(),task);
+
         queued.add(task);
 
         Collections.sort(queued,new Comparator<T>() {
@@ -49,26 +50,26 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public void run(T task) {
+    public synchronized void run(T task) {
         queued.remove(task);
         running.add(task);
     }
 
-    public List<T> getQueued() {
-        return queued;
+    public synchronized List<T> getQueued() {
+        return Collections.unmodifiableList(queued);
     }
 
-    public List<T> getRunning() {
-        return running;
+    public synchronized List<T> getRunning() {
+        return Collections.unmodifiableList(running);
     }
 
     @Override
-    public long queueSize() {
+    public synchronized long queueSize() {
         return queued.size();
     }
 
     @Override
-    public long runningCount() {
+    public synchronized long runningCount() {
         return running.size();
     }
 

@@ -28,11 +28,11 @@ public class SmartQTest {
 
         queue.submit(task);
 
-        assertEquals(1,queue.size());
+        assertEquals(1,queue.queueSize());
 
         assertNotNull(queue.acquire());
 
-        assertEquals(0,queue.size());
+        assertEquals(0,queue.queueSize());
     }
 
     @Test
@@ -54,7 +54,7 @@ public class SmartQTest {
         queue.submit(notImportantTask5);
 
 
-        assertEquals(6,queue.size());
+        assertEquals(6,queue.queueSize());
 
         assertEquals("Task with highest prio comes first",10,queue.acquire().getPriority());
     }
@@ -67,11 +67,11 @@ public class SmartQTest {
 
         queue.submit(task);
 
-        assertEquals(queue.size(),1);
+        assertEquals(queue.queueSize(),1);
 
         queue.cancel(task);
 
-        assertEquals(queue.size(),0);
+        assertEquals(queue.queueSize(),0);
 
         assertEquals(task.getState(),Task.State.PENDING);
     }
@@ -93,12 +93,12 @@ public class SmartQTest {
         queue.submit(task3);
         queue.submit(task4);
 
-        assertEquals(queue.size(),4);
+        assertEquals(queue.queueSize(),4);
 
         Task running1 = queue.acquire();
         Task running2 = queue.acquire();
 
-        assertEquals(queue.size(),2);
+        assertEquals(queue.queueSize(),2);
 
         ThreadedRunner runner = new ThreadedRunner(queue);
         runner.start();
@@ -128,13 +128,13 @@ public class SmartQTest {
         queue.submit(task3);
         queue.submit(task4);
 
-        assertEquals(queue.size(),4);
+        assertEquals(queue.queueSize(),4);
 
         Task running1 = queue.acquire();
         Task running2 = queue.acquire();
         Task running3 = queue.acquire();
 
-        assertEquals(queue.size(),1);
+        assertEquals(queue.queueSize(),1);
         assertEquals("test2",running3.getType());
 
         ThreadedRunner runner = new ThreadedRunner(queue);
@@ -163,7 +163,7 @@ public class SmartQTest {
         queue.submit(task3);
         queue.submit(task4);
 
-        assertEquals(queue.size(),4);
+        assertEquals(queue.queueSize(),4);
 
         assertEquals("ETA is correct",6000L,queue.getEstimatedTimeLeft());
 
@@ -188,7 +188,7 @@ public class SmartQTest {
 
         queue.setConsumers(2);
 
-        assertEquals(queue.size(), 4);
+        assertEquals(queue.queueSize(), 4);
 
         assertEquals("ETA is correct",3000L,queue.getEstimatedTimeLeft());
 
@@ -219,7 +219,7 @@ public class SmartQTest {
 
         queue.setConsumers(2);
 
-        assertEquals(queue.size(),4);
+        assertEquals(queue.queueSize(),4);
 
         assertEquals("ETA is correct",4000L,queue.getEstimatedTimeLeft());
 
@@ -262,9 +262,9 @@ public class SmartQTest {
         queue1.submit(task3);
         queue1.submit(task4);
 
-        assertEquals(queue1.size(),4);
-        assertEquals(queue2.size(),4);
-        assertEquals(queue3.size(),4);
+        assertEquals(queue1.queueSize(),4);
+        assertEquals(queue2.queueSize(),4);
+        assertEquals(queue3.queueSize(),4);
 
         ThreadedConsumer consumer1 = new ThreadedConsumer(queue1,"queue1");
         ThreadedConsumer consumer2 = new ThreadedConsumer(queue2,"queue2");
@@ -281,7 +281,7 @@ public class SmartQTest {
 
         queue2.acknowledge(consumer1.getTask().getId());
 
-        assertEquals(queue3.size(),3);
+        assertEquals(queue3.queueSize(),3);
 
         consumer2.join();
 
@@ -292,12 +292,10 @@ public class SmartQTest {
 
         queue3.acknowledge(consumer2.getTask().getId());
 
-        assertEquals(queue3.size(),2);
+        assertEquals(queue3.queueSize(),2);
 
         consumer3.join();
         assertTrue("Consumer 3 is done", consumer3.isDone());
-
-
     }
 
     private static class ThreadedConsumer extends Thread {
@@ -397,7 +395,11 @@ public class SmartQTest {
 
         @Override
         public void run() {
-            store.lock();
+            try {
+                store.lock();
+            } catch (InterruptedException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            }
             done = true;
         }
 

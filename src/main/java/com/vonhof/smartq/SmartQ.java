@@ -3,6 +3,8 @@ package com.vonhof.smartq;
 import org.apache.log4j.Logger;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,13 +16,21 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     private final Map<String, Integer> taskTypeRateLimits = new ConcurrentHashMap<String, Integer>();
 
     private volatile int consumers = 0;
+    private final TaskStore<T> store;
 
-    public SmartQ(TaskStore<T> store) {
+    private List<QueueListener> listeners = new ArrayList<QueueListener>();
+
+    public SmartQ(final TaskStore<T> store) {
         this.store = store;
     }
 
+
     public int getConsumers() {
         return consumers;
+    }
+
+    public TaskStore<T> getStore() {
+        return store;
     }
 
     public void setConsumers(int consumers) {
@@ -33,6 +43,28 @@ public class SmartQ<T extends Task,U extends Serializable>  {
             concurrency = 1;
         }
         return concurrency;
+    }
+
+    public void addListener(QueueListener listener) {
+        listeners.add(listener);
+    }
+
+    private void triggerAcquire(T task) {
+        for(QueueListener listener : listeners) {
+            listener.onAcquire(task);
+        }
+    }
+
+    private void triggerSubmit(T task) {
+        for(QueueListener listener : listeners) {
+            listener.onSubmit(task);
+        }
+    }
+
+    private void triggerDone(T task) {
+        for(QueueListener listener : listeners) {
+            listener.onDone(task);
+        }
     }
 
     protected int getConcurrency(String taskType) {
@@ -74,7 +106,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
      * @param taskType
      * @return
      */
-    public long getEstimatedTimeLeft(String taskType) {
+    public long getEstimatedTimeLeft(String taskType) throws InterruptedException {
         final int concurrency = getConcurrency(taskType);
 
         long typeTimeLeftTotal = getTypeETA(taskType);
@@ -87,7 +119,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
      * Get estimated time until queue no longer is blocked
      * @return
      */
-    public long getEstimatedTimeLeft() {
+    public long getEstimatedTimeLeft() throws InterruptedException {
 
         long timeLeft = 0;
 
@@ -105,140 +137,186 @@ public class SmartQ<T extends Task,U extends Serializable>  {
 
         return timeLeft;
     }
-
-
-    private final TaskStore<T> store;
-
-
-
     
-    protected CountMap<String> getTypeETA() {
+    protected CountMap<String> getTypeETA() throws InterruptedException {
         CountMap<String> typeETA = new CountMap<String>();
 
-        for(T task: store.getRunning()) {
-            typeETA.increment(task.getType(), task.getEstimatedTimeLeft());
-        }
+        getStore().lock();
 
-        for(T task: store.getQueued()) {
-            typeETA.increment(task.getType(),task.getEstimatedTimeLeft());
+        try {
+            for(T task: getStore().getRunning()) {
+                typeETA.increment(task.getType(), task.getEstimatedTimeLeft());
+            }
+
+            for(T task: getStore().getQueued()) {
+                typeETA.increment(task.getType(),task.getEstimatedTimeLeft());
+            }
+        } finally {
+            getStore().unlock();
         }
 
         return typeETA;
     }
 
-    
-    protected long getTypeETA(String type) {
+
+    protected long getTypeETA(String type) throws InterruptedException {
         return getTypeETA().get(type);
     }
 
+    /**
+     * Amount of running task
+     * @return
+     */
+    public long runningCount() {
+        return getStore().runningCount();
+    }
 
-    
+
+    /**
+     * Amount of queued task
+     * @return
+     */
+    public long queueSize() {
+        return getStore().queueSize();
+    }
+
+    /**
+     * Returns total size of queue + currently running tasks
+     * @return
+     */
     public long size() {
-        return store.queueSize();
+        return getStore().queueSize() + getStore().runningCount();
     }
 
     
-    public boolean submit(T task) {
+    public boolean submit(T task) throws InterruptedException {
 
-        store.queue(task);
-        store.signalChange();
+        getStore().lock();
+        try {
+            getStore().queue(task);
+            getStore().signalChange();
+
+            triggerSubmit(task);
+        } finally {
+            getStore().unlock();
+        }
+
 
         return true;
     }
 
     
-    public synchronized boolean cancel(T task) {
-        if (store.get(task.getId()).isRunning()) {
+    public synchronized boolean cancel(T task) throws InterruptedException {
+        if (getStore().get(task.getId()).isRunning()) {
             return false;
         }
 
-        log.debug("Cancelled task");
-        store.remove(task);
-        store.signalChange();
+        getStore().lock();
+
+        try {
+            log.debug("Cancelled task");
+            getStore().remove(task);
+            getStore().signalChange();
+
+            triggerDone(task);
+        } finally {
+            getStore().unlock();
+        }
 
         return true;
     }
 
     
-    public synchronized void acknowledge(UUID id, U response) {
-        T task = store.get(id);
-        if (task == null) {
-            throw new IllegalArgumentException("Task not found");
-        }
+    public synchronized void acknowledge(UUID id, U response) throws InterruptedException {
+            T task = getStore().get(id);
+            if (task == null) {
+                throw new IllegalArgumentException("Task not found: " + id);
+            }
 
-        task.setState(Task.State.DONE);
-        task.setEnded(WatchProvider.currentTime());
-        synchronized (store) {
+        getStore().lock();
+
+        try {
+            task.setState(Task.State.DONE);
+            task.setEnded(WatchProvider.currentTime());
+
             log.debug("Acked task");
-            store.remove(task);
-            store.signalChange();
+            getStore().remove(task);
+            getStore().signalChange();
+
+            triggerDone(task);
+        } finally {
+            getStore().unlock();
         }
     }
 
     
     public T acquire(String taskType) throws InterruptedException {
-        store.lock();
 
-        try {
             T selectedTask = null;
 
             while(selectedTask == null) {
+
+                getStore().lock();
+
                 CountMap<String> tasksRunning = new CountMap<String>();
-                log.debug(String.format("Running tasks: %s", store.runningCount()));
+                log.debug(String.format("Running tasks: %s", getStore().runningCount()));
 
-                for(T task : store.getRunning()) {
-                    tasksRunning.increment(task.getType(), 1);
-                }
+                try {
 
-                log.debug(String.format("Queue size: %s", store.queueSize()));
-
-                for(T task : store.getQueued()) {
-                    if (taskType != null && !task.getType().equals(taskType)) {
-                        continue;
+                    for(T task : getStore().getRunning()) {
+                        tasksRunning.increment(task.getType(), 1);
                     }
 
-                    int limit = getTaskTypeRateLimit(task.getType());
+                    log.debug(String.format("Queue queueSize: %s", getStore().queueSize()));
 
-                    if (limit > 0) {
-                        long running = tasksRunning.get(task.getType());
-
-                        if (running >= limit) {
+                    for(T task : getStore().getQueued()) {
+                        if (taskType != null && !task.getType().equals(taskType)) {
                             continue;
                         }
+
+                        int limit = getTaskTypeRateLimit(task.getType());
+
+                        if (limit > 0) {
+                            long running = tasksRunning.get(task.getType());
+
+                            if (running >= limit) {
+                                continue;
+                            }
+                        }
+
+                        selectedTask = task;
+                        break;
                     }
 
-                    selectedTask = task;
-                    break;
+                    if (selectedTask != null) {
+
+                        selectedTask.setState(Task.State.RUNNING);
+                        selectedTask.setStarted(WatchProvider.currentTime());
+                        log.trace("Moving task to running pool");
+                        getStore().run(selectedTask);
+                        triggerAcquire(selectedTask);
+
+                        log.debug("Acquired task");
+                    }
+
+                } finally {
+                    getStore().unlock();
                 }
 
 
                 if (selectedTask == null) {
                     log.debug("Waiting for tasks");
-                    store.waitForChange();
+                    getStore().waitForChange();
                     log.debug("Woke up!");
-                }  else {
-                    log.debug("Acquired task");
-                    break;
-                }
-            }
-
-            synchronized (this) {
-                if (selectedTask != null) {
-                    selectedTask.setState(Task.State.RUNNING);
-                    selectedTask.setStarted(WatchProvider.currentTime());
-                    store.run(selectedTask);
                 }
             }
 
             return selectedTask;
-        } finally {
-            log.debug("Unlocking queue");
-            store.unlock();
-        }
+
     }
 
 
-    public void acknowledge(UUID id) {
+    public void acknowledge(UUID id) throws InterruptedException {
         acknowledge(id,null);
     }
 

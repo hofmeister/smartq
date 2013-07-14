@@ -26,7 +26,7 @@ public interface TaskStore<T extends Task> {
 
     public void unlock();
 
-    public void lock();
+    public void lock() throws InterruptedException;
 
     public void waitForChange() throws InterruptedException;
 
