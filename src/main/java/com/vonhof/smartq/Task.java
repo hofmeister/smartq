@@ -3,8 +3,6 @@ package com.vonhof.smartq;
 import org.codehaus.jackson.annotate.JsonIgnore;
 
 import java.io.Serializable;
-import java.lang.ref.WeakReference;
-import java.util.Date;
 import java.util.UUID;
 
 public class Task<T extends Serializable> implements Serializable {
@@ -23,7 +21,7 @@ public class Task<T extends Serializable> implements Serializable {
     private T data;
 
     public Task() {
-        this("");
+        this("none");
     }
 
     public Task withPriority(int priority) {
