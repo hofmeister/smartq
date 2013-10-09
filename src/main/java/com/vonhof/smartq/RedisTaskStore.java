@@ -4,6 +4,7 @@ import org.apache.log4j.Logger;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.Pipeline;
 
 import java.io.IOException;
 import java.util.Iterator;
@@ -430,10 +431,25 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
         final Jedis jedis = jedisPool.getResource();
         try {
-            jedis.del(key(CHANGES));
-            jedis.del(key(LOCK));
-            jedis.del(key(RUNNING_COUNT));
-            jedis.del(key(QUEUED_COUNT));
+            Pipeline pipe = jedis.pipelined();
+            pipe.del(
+                key(CHANGES),
+                key(LOCK),
+                key(RUNNING_COUNT),
+                key(QUEUED_COUNT),
+                key(QUEUED_ETA)
+            );
+
+            for(String type : getTypes()) {
+                pipe.del(
+                    typedKey(RUNNING_COUNT, type),
+                    typedKey(QUEUED_COUNT, type),
+                    typedKey(RUNNING_LIST, type),
+                    typedKey(QUEUE_LIST, type),
+                    typedKey(QUEUED_ETA, type)
+                );
+            }
+            pipe.sync();
 
         } finally {
             jedisPool.returnResource(jedis);
@@ -469,27 +485,20 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     private class SortedTaskIterator implements Iterator<T> {
 
         private final String key;
-        private final long length;
         private int offset = 0;
         private T next = null;
 
         private SortedTaskIterator(String key) {
             this.key = key;
-
-            Jedis jedis = jedisPool.getResource();
-            try {
-                length = jedis.zcount(key,Double.MIN_VALUE,Double.MAX_VALUE);
-            } finally {
-                jedisPool.returnResource(jedis);
-            }
         }
 
         @Override
         public boolean hasNext() {
             Jedis jedis = jedisPool.getResource();
             try {
-                while(offset < length) {
-                    Set<String> result = jedis.zrevrange(key, offset++, 1);
+                while(true) {
+                    Set<String> result = jedis.zrevrange(key, offset, offset);
+                    offset++;
                     if (result.isEmpty()) {
                         return false;
                     }
@@ -513,8 +522,6 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             } finally {
                 jedisPool.returnResource(jedis);
             }
-
-            return false;
         }
 
         @Override
