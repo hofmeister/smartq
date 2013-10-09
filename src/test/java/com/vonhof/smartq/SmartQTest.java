@@ -217,6 +217,35 @@ public class SmartQTest {
         assertEquals("ETA is correct for type",2000L,queue.getEstimatedTimeLeft("b"));
     }
 
+    @Test
+    public void can_get_running_tasks_by_type() throws InterruptedException {
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+
+        Task task1 = new Task("a",1000);
+        Task task2 = new Task("a",1000);
+        Task task3 = new Task("b",2000);
+        Task task4 = new Task("b",2000);
+
+        queue.submit(task1);
+        queue.submit(task2);
+        queue.submit(task3);
+        queue.submit(task4);
+
+        Task a = queue.acquire("a");
+
+        assertFalse("No running b tasks",queue.getStore().getRunning("b").hasNext());
+
+        assertTrue("Can get running A tasks",queue.getStore().getRunning("a").hasNext());
+
+        assertEquals("Can get running A task count",1, queue.getStore().runningCount("a"));
+
+        queue.acknowledge(a.getId());
+
+        assertFalse("No more running A tasks",queue.getStore().getRunning("a").hasNext());
+
+        assertEquals("Can get new running A task count",0, queue.getStore().runningCount("a"));
+    }
+
 
     @Test
     public void can_do_rate_limited_consumer_based_estimations() throws InterruptedException {

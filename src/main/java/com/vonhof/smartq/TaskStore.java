@@ -1,7 +1,8 @@
 package com.vonhof.smartq;
 
 
-import java.util.List;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.UUID;
 
 public interface TaskStore<T extends Task> {
@@ -16,13 +17,27 @@ public interface TaskStore<T extends Task> {
 
     public void run(T task);
 
-    public List<T> getQueued();
+    public Iterator<T> getQueued();
 
-    public List<T> getRunning();
+    public Iterator<T> getQueued(String type);
+
+    public Iterator<T> getRunning();
+
+    public Iterator<T> getRunning(String type);
 
     public long queueSize();
 
     public long runningCount();
+
+    public long queueSize(String type);
+
+    public long runningCount(String type);
+
+    public Set<String> getTypes();
+
+    public long getQueuedETA(String type);
+
+    public long getQueuedETA();
 
     public void unlock();
 

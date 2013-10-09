@@ -10,6 +10,8 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     private final Map<UUID, T> tasks = new ConcurrentHashMap<UUID, T>();
     private final List<T> queued = Collections.synchronizedList(new LinkedList<T>());
     private final List<T> running = Collections.synchronizedList(new LinkedList<T>());
+    private final CountMap<String> runningTypeCount = new CountMap<String>();
+    private final CountMap<String> queuedTypeCount = new CountMap<String>();
 
     private final Lock lock = new ReentrantLock();
 
@@ -24,11 +26,13 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
         tasks.remove(task.getId());
         queued.remove(task);
         running.remove(task);
+        queuedTypeCount.decrement(task.getType(),1);
+        runningTypeCount.decrement(task.getType(),1);
     }
 
     @Override
     public synchronized void remove(UUID id) {
-        tasks.remove(id);
+        remove(get(id));
     }
 
     @Override
@@ -36,31 +40,53 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
         tasks.put(task.getId(),task);
 
         queued.add(task);
+        queuedTypeCount.increment(task.getType(),1);
 
-        Collections.sort(queued,new Comparator<T>() {
-            @Override
-            public int compare(T t, T t2) {
-                int diffPrio = t2.getPriority()-t.getPriority();
-                if (diffPrio == 0) {
-                    return (int) ( (t.getCreated() / 1000L) - (t2.getCreated() / 1000L) );
-                }
-                return diffPrio;
-            }
-        });
+        sort(queued);
     }
 
     @Override
     public synchronized void run(T task) {
         queued.remove(task);
+        queuedTypeCount.decrement(task.getType(), 1);
         running.add(task);
+        runningTypeCount.increment(task.getType(),1);
+
+        sort(running);
     }
 
-    public synchronized List<T> getQueued() {
-        return Collections.unmodifiableList(queued);
+    public synchronized Iterator<T> getQueued() {
+        return Collections.unmodifiableList(queued).iterator();
     }
 
-    public synchronized List<T> getRunning() {
-        return Collections.unmodifiableList(running);
+    @Override
+    public Iterator<T> getQueued(String type) {
+        List<T> out = new LinkedList<T>();
+        for(T task : queued) {
+            if (type.equalsIgnoreCase(task.getType())) {
+                out.add(task);
+            }
+        }
+
+        sort(out);
+        return Collections.unmodifiableList(out).iterator();
+    }
+
+    public synchronized Iterator<T> getRunning() {
+        return Collections.unmodifiableList(running).iterator();
+    }
+
+    @Override
+    public Iterator<T> getRunning(String type) {
+        List<T> out = new LinkedList<T>();
+        for(T task : running) {
+            if (type.equalsIgnoreCase(task.getType())) {
+                out.add(task);
+            }
+        }
+
+        sort(out);
+        return Collections.unmodifiableList(out).iterator();
     }
 
     @Override
@@ -71,6 +97,41 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public synchronized long runningCount() {
         return running.size();
+    }
+
+    @Override
+    public long queueSize(String type) {
+        return queuedTypeCount.get(type);
+    }
+
+    @Override
+    public long runningCount(String type) {
+        return runningTypeCount.get(type);
+    }
+
+    @Override
+    public Set<String> getTypes() {
+        return Collections.unmodifiableSet(queuedTypeCount.keySet());
+    }
+
+    @Override
+    public long getQueuedETA(String type) {
+        long eta = 0;
+        for(T task : queued) {
+            if (type.equalsIgnoreCase(task.getType())) {
+                eta += task.getEstimatedDuration();
+            }
+        }
+        return eta;
+    }
+
+    @Override
+    public long getQueuedETA() {
+        long eta = 0;
+        for(T task : queued) {
+            eta += task.getEstimatedDuration();
+        }
+        return eta;
     }
 
     @Override
@@ -92,4 +153,18 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     public synchronized void signalChange() {
         this.notifyAll();
     }
+
+    private void sort(List<T> tasks) {
+        Collections.sort(tasks,new Comparator<T>() {
+            @Override
+            public int compare(T t, T t2) {
+                int diffPrio = t2.getPriority()-t.getPriority();
+                if (diffPrio == 0) {
+                    return (int) ( (t.getCreated() / 1000L) - (t2.getCreated() / 1000L) );
+                }
+                return diffPrio;
+            }
+        });
+    }
+
 }

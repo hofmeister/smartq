@@ -4,6 +4,8 @@ import org.apache.log4j.Logger;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -71,7 +73,6 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         int concurrency = getConcurrency();
 
         int concurrencyLimit = getTaskTypeRateLimit(taskType);
-        int typeConcurrency = 1;
         if (concurrencyLimit < 0) {
             return concurrency;
         } else {
@@ -144,13 +145,16 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         getStore().lock();
 
         try {
-            for(T task: getStore().getRunning()) {
+            Iterator<T> running = getStore().getRunning();
+            while(running.hasNext()) {
+                T task = running.next();
                 typeETA.increment(task.getType(), task.getEstimatedTimeLeft());
             }
 
-            for(T task: getStore().getQueued()) {
-                typeETA.increment(task.getType(),task.getEstimatedTimeLeft());
+            for(String type: getStore().getTypes()) {
+                typeETA.increment(type, getStore().getQueuedETA(type));
             }
+
         } finally {
             getStore().unlock();
         }
@@ -160,7 +164,11 @@ public class SmartQ<T extends Task,U extends Serializable>  {
 
 
     protected long getTypeETA(String type) throws InterruptedException {
-        return getTypeETA().get(type);
+        long eta = getStore().getQueuedETA(type);
+        for(T task: getRunningTasks(type)) {
+            eta += task.getEstimatedTimeLeft();
+        }
+        return eta;
     }
 
     /**
@@ -273,23 +281,22 @@ public class SmartQ<T extends Task,U extends Serializable>  {
 
                 try {
 
-                    for(T task : getStore().getRunning()) {
-                        tasksRunning.increment(task.getType(), 1);
-                    }
-
                     log.debug(String.format("Queue queueSize: %s", getStore().queueSize()));
 
-                    for(T task : getStore().getQueued()) {
-                        if (taskType != null && !task.getType().equals(taskType)) {
-                            continue;
-                        }
+                    Iterator<T> queued = taskType != null ? getStore().getQueued(taskType) : getStore().getQueued();
+                    while(queued.hasNext()) {
+                        final T task = queued.next();
 
                         int limit = getTaskTypeRateLimit(task.getType());
 
                         if (limit > 0) {
+                            if (!tasksRunning.contains(task.getType())) {
+                                tasksRunning.set(task.getType(), getStore().runningCount(task.getType()));
+                            }
                             long running = tasksRunning.get(task.getType());
 
                             if (running >= limit) {
+                                log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",task.getType(),running, limit));
                                 continue;
                             }
                         }
@@ -322,7 +329,16 @@ public class SmartQ<T extends Task,U extends Serializable>  {
             }
 
             return selectedTask;
+    }
 
+    public List<T> getRunningTasks(String type) {
+        List<T> out = new LinkedList<T>();
+        Iterator<T> running = getStore().getRunning(type);
+        while(running.hasNext()) {
+            out.add(running.next());
+        }
+
+        return out;
     }
 
 

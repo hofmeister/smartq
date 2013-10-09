@@ -80,4 +80,12 @@ public class CountMap<T>  {
             set(t,count);
         }
     }
+
+    public boolean contains(T type) {
+        return map.containsKey(type);
+    }
+
+    public Set<T> keySet() {
+        return map.keySet();
+    }
 }
