@@ -1,7 +1,6 @@
 package com.vonhof.smartq;
 
 
-import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
@@ -25,7 +24,7 @@ public class Benchmark {
 
         List<StressSubscriber> subscribers = new ArrayList<StressSubscriber>();
 
-        for(int i = 0; i < 20; i++) {
+        for(int i = 0; i < 16; i++) {
             StressSubscriber subscriber = new StressSubscriber(i);
             subscribers.add(subscriber);
             subscriber.start();
