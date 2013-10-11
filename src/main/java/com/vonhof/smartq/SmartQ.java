@@ -213,15 +213,24 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         return true;
     }
 
+    public boolean cancel(UUID taskId) throws InterruptedException {
+        return cancel(getStore().get(taskId));
+    }
+
     public boolean cancel(T task) throws InterruptedException {
         return cancel(task, false);
     }
+
+    public boolean cancel(UUID taskId, boolean reschedule) throws InterruptedException {
+        T t = getStore().get(taskId);
+        return cancel(t, reschedule);
+
+    }
     
     public boolean cancel(T task, boolean reschedule) throws InterruptedException {
-        if (getStore().get(task.getId()).isRunning()) {
+        if (task == null) {
             return false;
         }
-
         getStore().lock();
 
         try {
@@ -307,13 +316,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
 
                     if (selectedTask != null) {
 
-                        selectedTask.setState(Task.State.RUNNING);
-                        selectedTask.setStarted(WatchProvider.currentTime());
-                        log.trace("Moving task to running pool");
-                        getStore().run(selectedTask);
-                        triggerAcquire(selectedTask);
-
-                        log.debug("Acquired task");
+                        acquireTask(selectedTask);
                     }
 
                 } finally {
@@ -349,5 +352,57 @@ public class SmartQ<T extends Task,U extends Serializable>  {
 
     public T acquire() throws InterruptedException {
        return acquire(null);
+    }
+
+    public void requeueAll() throws InterruptedException {
+        getStore().lock();
+        try {
+            List<T> tasks = new LinkedList<T>();
+            Iterator<T> running = getStore().getRunning();
+            while(running.hasNext()) {
+                tasks.add(running.next());
+            }
+
+            for(T task : tasks) {
+                getStore().remove(task);
+                task.reset();
+                getStore().queue(task);
+
+                log.debug("Requeued task: " + task.getId());
+            }
+
+        } finally {
+            getStore().unlock();
+        }
+
+    }
+
+    private void acquireTask(T t) {
+        t.setState(Task.State.RUNNING);
+        t.setStarted(WatchProvider.currentTime());
+        log.trace("Moving task to running pool");
+        getStore().run(t);
+        triggerAcquire(t);
+
+        log.debug("Acquired task");
+    }
+
+    public T acquireTask(UUID taskId) throws InterruptedException {
+        getStore().lock();
+        try {
+            T t = getStore().get(taskId);
+            if (t == null) {
+                return null;
+            }
+            if (t.isRunning()) {
+                return null; //Already running
+            }
+
+            acquireTask(t);
+
+            return t;
+        } finally {
+            getStore().unlock();
+        }
     }
 }

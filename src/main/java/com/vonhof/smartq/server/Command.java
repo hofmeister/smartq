@@ -2,6 +2,8 @@ package com.vonhof.smartq.server;
 
 
 import java.io.Serializable;
+import java.util.Collection;
+import java.util.UUID;
 
 public class Command implements Serializable {
     private final Type type;
@@ -33,10 +35,12 @@ public class Command implements Serializable {
     }
 
     public static enum Type {
-        RATE_LIMIT(String.class,Integer.class),
-        ETA(),
-        ETA_TYPE(String.class)
+        ACQUIRE(),
+        ACK(UUID.class),
+        NACK(UUID.class, Boolean.class),
+        RECOVER(Collection.class)
         ;
+
 
         private Class[] argTypes;
 

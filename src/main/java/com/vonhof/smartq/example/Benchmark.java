@@ -1,6 +1,12 @@
-package com.vonhof.smartq;
+package com.vonhof.smartq.example;
 
 
+import com.vonhof.smartq.DefaultTaskResult;
+import com.vonhof.smartq.MemoryTaskStore;
+import com.vonhof.smartq.QueueListener;
+import com.vonhof.smartq.RedisTaskStore;
+import com.vonhof.smartq.SmartQ;
+import com.vonhof.smartq.Task;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 

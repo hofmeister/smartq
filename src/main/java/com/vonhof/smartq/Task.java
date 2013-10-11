@@ -149,7 +149,10 @@ public class Task<T extends Serializable> implements Serializable {
         this.data = data;
     }
 
-
+    public Task withId(UUID id) {
+        this.setId(id);
+        return this;
+    }
 
 
     public static enum State {
