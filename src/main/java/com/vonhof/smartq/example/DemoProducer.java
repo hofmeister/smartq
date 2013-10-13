@@ -12,21 +12,23 @@ import redis.clients.jedis.JedisPoolConfig;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Date;
 
 public class DemoProducer {
     public static final InetSocketAddress ADDRESS = new InetSocketAddress("127.0.0.1",54321);
 
     public static void main(String[] args) throws IOException, InterruptedException {
         PropertyConfigurator.configure("log4j.properties");
+        JedisPoolConfig jConf = new JedisPoolConfig();
+        jConf.setMaxActive(50);
+        jConf.setMaxWait(50);
 
-        final JedisPool jedis = new JedisPool(new JedisPoolConfig(),"localhost",6379,0);
+        final JedisPool jedis = new JedisPool(jConf,"localhost",6379,0);
         RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis, Task.class);
         store.setNamespace("demo/");
 
         final SmartQ<Task, DefaultTaskResult> queue = new SmartQ<Task, DefaultTaskResult>(store);
 
-        queue.requeueAll(); //If any was left as running - move them back to queue.
+        //queue.requeueAll(); //If any was left as running - move them back to queue.
 
         final SmartQProducer<Task> producer = new SmartQProducer<Task>(ADDRESS, queue);
 
@@ -38,9 +40,9 @@ public class DemoProducer {
                 while(!interrupted()) {
                     try {
                         Task task = new Task("test");
-                        System.out.println(new Date() + " - Task submitted: " + task.getId());
+                        //System.out.println(new Date() + " - Task submitted: " + task.getId());
                         queue.submit(task);
-                        Thread.sleep(5000 + (int)(50000*Math.random()));
+                        Thread.sleep(1000);
                     } catch (InterruptedException e) {
                         return;
                     }

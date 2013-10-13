@@ -2,6 +2,7 @@ package com.vonhof.smartq.server;
 
 
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.UUID;
 
@@ -34,8 +35,16 @@ public class Command implements Serializable {
         return args;
     }
 
+    @Override
+    public String toString() {
+        return "Command{" +
+                "type=" + type +
+                ", args=" + Arrays.toString(args) +
+                '}';
+    }
+
     public static enum Type {
-        ACQUIRE(),
+        READY(),
         ACK(UUID.class),
         NACK(UUID.class, Boolean.class),
         RECOVER(Collection.class)

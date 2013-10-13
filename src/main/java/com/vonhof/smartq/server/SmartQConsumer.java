@@ -11,7 +11,6 @@ import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
 import org.apache.mina.filter.codec.serialization.ObjectSerializationCodecFactory;
-import org.apache.mina.filter.logging.LoggingFilter;
 import org.apache.mina.transport.socket.nio.NioSocketConnector;
 
 import java.io.IOException;
@@ -21,8 +20,12 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class SmartQConsumer<T extends Task> {
 
@@ -43,8 +46,14 @@ public class SmartQConsumer<T extends Task> {
 
     private Map<UUID, T> activeTasks = new ConcurrentHashMap<UUID, T>();
     private List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
+    private final Executor executor = Executors.newFixedThreadPool(1);
+    private Timer timer;
+
+    private final UUID id;
+
 
     public SmartQConsumer(InetSocketAddress hostAddress, SmartQConsumerHandler<T> responseHandler) {
+        id = UUID.randomUUID();
         this.hostAddress = hostAddress;
         this.responseHandler = responseHandler;
     }
@@ -70,10 +79,9 @@ public class SmartQConsumer<T extends Task> {
             throw new RuntimeException("Client already connected. Close connection before reconnecting");
         }
 
+        timer = new Timer();
         connector = new NioSocketConnector();
         connector.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ObjectSerializationCodecFactory()));
-
-        connector.getFilterChain().addLast("logger", new LoggingFilter());
 
         connector.setHandler(new ClientSessionHandler());
 
@@ -82,9 +90,16 @@ public class SmartQConsumer<T extends Task> {
             future.await(connectionTimeout);
             session = future.getSession();
 
-            log.debug(String.format("Connected to " + hostAddress));
+            log.debug(String.format("Connected to " + hostAddress + " - " + this));
+            if (!reconnecting) {
+                ready();
+            }
+            timer.scheduleAtFixedRate(new HostPinger(),5000,1000);
         } catch (RuntimeIoException e) {
-            connector.dispose();
+            if (connector != null) {
+                connector.dispose();
+            }
+
             connector = null;
             session = null;
             throw new IOException("Could not connect to "+hostAddress,e);
@@ -93,8 +108,14 @@ public class SmartQConsumer<T extends Task> {
     }
 
     public void close() {
-        closing = true;
+        if (timer != null) {
+            timer.cancel();
+            timer.purge();
+            timer = null;
+        }
 
+
+        closing = true;
         if (session != null) {
             session.close(true);
         }
@@ -102,36 +123,44 @@ public class SmartQConsumer<T extends Task> {
         session = null;
         if (connector != null) {
             connector.dispose(false);
-            log.debug(String.format("Disconnected from " + hostAddress));
+            if (!reconnecting) {
+                log.debug("Disconnected from " + hostAddress + " - " + this);
+            }
         }
         connector = null;
     }
 
-    protected void reconnectLater() throws InterruptedException {
+    protected synchronized void reconnectLater() throws InterruptedException {
         if (closing) {
             closing = false;
             return;
         }
+        if (reconnecting) {
+            return;
+        }
+        reconnecting = true;
         new Thread("Recover thread") {
             @Override
             public void run() {
-                reconnecting = true;
+
                 close();
+                closing = false;
 
 
                 if (retryTimeout < 1) {
                     return;
                 }
 
-                log.debug("Was unexpectedly disconnected from  " + hostAddress+". Will try to reconnect.");
+                log.debug("Was unexpectedly disconnected from  " + hostAddress+". Will try to reconnect. " + SmartQConsumer.this);
 
                 while(true) {
                     try {
                         connect();
                         reconnecting = false;
                         recover();
+                        ready();
                     } catch (IOException e) {
-                        log.debug("Failed to reconnect to " + hostAddress+". Waiting "+retryTimeout+"ms before trying again");
+                        log.trace("Failed to reconnect to " + hostAddress + ". Waiting " + retryTimeout + "ms before trying again");
                         try {
                             Thread.sleep(retryTimeout);
                         } catch (InterruptedException e1) {
@@ -148,23 +177,39 @@ public class SmartQConsumer<T extends Task> {
         }.start();
     }
 
+    private synchronized void ready() throws InterruptedException {
+        send(new Command(Type.READY));
+    }
+
     private synchronized void recover() throws InterruptedException {
+        if (!checkSession()) {
+            return;
+        }
         if (!activeTasks.isEmpty()) {
+            log.debug("Sending recover request to newly opened host: " + activeTasks.size());
             if (!send(new Command(Type.RECOVER, new ArrayList<UUID>(activeTasks.keySet())))) {
                 throw new RuntimeException("Timed out while waiting for recover");
             }
+            activeTasks.clear();
         }
         if (!queuedMessages.isEmpty()) {
+            log.debug("Executing queued messages: " + queuedMessages.size());
             for(Command cmd: queuedMessages) {
-                send(cmd);
+                switch (cmd.getType()) {
+                    case ACK:
+                        acknowledge((UUID)cmd.getArgs()[0]);
+                        break;
+                    case NACK:
+                        cancel((UUID)cmd.getArgs()[0],(Boolean)cmd.getArgs()[0]);
+                        break;
+                    case READY:
+                        ready();
+                        break;
+                }
             }
 
             queuedMessages.clear();
         }
-    }
-
-    public void acquire() throws InterruptedException {
-        send(new Command(Type.ACQUIRE));
     }
 
     public void acknowledge(UUID taskId) throws InterruptedException {
@@ -200,28 +245,42 @@ public class SmartQConsumer<T extends Task> {
         if (checkSession()) {
             session.write(message);
             return true;
-        } else if (reconnecting && !message.getType().equals(Type.RECOVER)) {
+        } else if (!message.getType().equals(Type.RECOVER)) {
+            log.debug("Connection unavailable - command queued: " + message);
             queuedMessages.add(message);
+            if (!reconnecting) {
+                reconnectLater();
+            }
         } else {
-            throw new RuntimeIoException("Connection not available");
+            throw new RuntimeIoException("Connection not available - " + this);
         }
 
         return false;
+    }
+
+    @Override
+    public String toString() {
+        return "C{" + id + '}';
     }
 
     private class ClientSessionHandler implements IoHandler {
 
         @Override
         public void sessionCreated(IoSession session) throws Exception {}
+
         @Override
-        public void sessionOpened(IoSession session) throws Exception {}
+        public void sessionOpened(IoSession session) throws Exception {
+
+        }
+
         @Override
         public void sessionIdle(IoSession session, IdleStatus status) throws Exception {}
         @Override
         public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
-            log.error("Got exception while processing request", cause);
             if (cause instanceof IOException) {
                 reconnectLater();
+            } else {
+                log.error("Got exception while processing request on " + SmartQConsumer.this, cause);
             }
         }
         @Override
@@ -235,18 +294,42 @@ public class SmartQConsumer<T extends Task> {
         @Override
         public void messageReceived(IoSession session, Object message) throws Exception {
             if (message instanceof Task) {
-                T task = (T) message;
-                try {
-                    activeTasks.put(task.getId(),task);
-                    responseHandler.taskReceived(SmartQConsumer.this, task);
-                } catch (Exception ex) {
-                    log.error("Failed to process task",ex);
-                    cancel(((T)message).getId(),false);
-                }
+                final T task = (T) message;
+
+                log.debug("Processing task: " + task.getId() + " on " + SmartQConsumer.this);
+                activeTasks.put(task.getId(),task);
+
+                executor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            responseHandler.taskReceived(SmartQConsumer.this, task);
+                            log.debug("Task processed: " + task.getId() + " on " + SmartQConsumer.this);
+                        } catch (Exception ex) {
+                            log.error("Failed to process task:" + task.getId() + " on " + SmartQConsumer.this, ex);
+                            try {
+                                cancel(task.getId(),false);
+                            } catch (InterruptedException e) {}
+                        }
+                    }
+                });
+
             }
 
             if (message instanceof Error) {
                 throw new Exception(((Error)message).getMessage());
+            }
+        }
+    }
+
+    private class HostPinger extends TimerTask {
+
+        @Override
+        public void run() {
+            if (!checkSession()) {
+                try {
+                    reconnectLater();
+                } catch (InterruptedException e) {}
             }
         }
     }

@@ -8,7 +8,6 @@ import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 
 import java.io.IOException;
-import java.util.Date;
 
 public class DemoConsumer {
 
@@ -16,45 +15,22 @@ public class DemoConsumer {
 
     public static void main(String[] args) throws IOException, InterruptedException {
         PropertyConfigurator.configure("log4j.properties");
+        int consumerCount = 15;
 
-        final SmartQConsumer consumer = new SmartQConsumer<Task>(DemoProducer.ADDRESS,new SmartQConsumerHandler<Task>() {
-            @Override
-            public void taskReceived(SmartQConsumer<Task> consumer, Task task) throws Exception {
-                System.out.println(new Date() + " - Task: " + task.getId());
-                try {
-                    Thread.sleep((int)(10000 * Math.random()));
-                } catch (InterruptedException e) {
-                    return;
-                }
-                consumer.acknowledge(task.getId());
-            }
-        });
-
-        consumer.connect();
-
-        Thread acquireRun = new Thread() {
-            @Override
-            public void run() {
-                while(!interrupted()) {
+        for(int i = 0 ; i < consumerCount; i++) {
+            new SmartQConsumer<Task>(DemoProducer.ADDRESS,new SmartQConsumerHandler<Task>() {
+                @Override
+                public void taskReceived(SmartQConsumer<Task> consumer, Task task) throws Exception {
                     try {
-                        consumer.acquire();
-                        //System.out.println(new Date() + " - Acquire called");
-                    } catch (RuntimeException ex) {
-                      //Ignore
+                        Thread.sleep(15000 + (int)(60000 * Math.random()));
                     } catch (InterruptedException e) {
                         return;
                     }
-
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        return;
-                    }
+                    consumer.acknowledge(task.getId());
                 }
-            }
-        };
+            }).connect();
+        }
 
-        acquireRun.start();
-        acquireRun.join();
+
     }
 }

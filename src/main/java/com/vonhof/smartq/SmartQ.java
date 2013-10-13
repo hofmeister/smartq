@@ -21,6 +21,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     private final TaskStore<T> store;
 
     private List<QueueListener> listeners = new ArrayList<QueueListener>();
+    private boolean interrupted = false;
 
     public SmartQ(final TaskStore<T> store) {
         this.store = store;
@@ -276,9 +277,14 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         }
     }
 
+    public void interrupt() {
+        interrupted = true;
+        store.signalChange();
+    }
     
     public T acquire(String taskType) throws InterruptedException {
 
+            interrupted = false;
             T selectedTask = null;
 
             while(selectedTask == null) {
@@ -328,6 +334,10 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                     log.debug("Waiting for tasks");
                     getStore().waitForChange();
                     log.debug("Woke up!");
+                    if (interrupted) {
+                        interrupted = false;
+                        throw new AcquireInterrupedException();
+                    }
                 }
             }
 
