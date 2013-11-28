@@ -1,12 +1,16 @@
 package com.vonhof.smartq;
 
+import org.apache.log4j.Logger;
+
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 
 public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
+    private static final Logger log = Logger.getLogger(MemoryTaskStore.class);
     private final Map<UUID, T> tasks = new ConcurrentHashMap<UUID, T>();
     private final List<T> queued = Collections.synchronizedList(new LinkedList<T>());
     private final List<T> running = Collections.synchronizedList(new LinkedList<T>());
@@ -134,23 +138,48 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
         return eta;
     }
 
-    @Override
-    public void unlock() {
-        lock.unlock();
-    }
+    ThreadLocal<UUID> localTID = new ThreadLocal<UUID>() {
+        @Override
+        protected UUID initialValue() {
+            return UUID.randomUUID();
+        }
+    };
+
+    private volatile UUID tid = null;
 
     @Override
-    public void lock() {
-        lock.lock();
+    public  <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
+        UUID lTid = localTID.get();
+        if (!lTid.equals(tid)) {
+            log.debug("Locking TID: "+lTid);
+            lock.lock();
+            tid = lTid;
+            log.debug("Locked TID: "+lTid);
+        }
+        try {
+            return callable.call();
+        } catch (InterruptedException e) {
+          throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            if (lTid.equals(tid)) {
+                tid = null;
+                log.debug("Unlocking TID: "+lTid);
+                lock.unlock();
+            }
+        }
     }
 
     @Override
     public synchronized void waitForChange() throws InterruptedException {
+        log.debug("Waiting for change");
         this.wait();
     }
 
     @Override
     public synchronized void signalChange() {
+        log.debug("Signalling change");
         this.notifyAll();
     }
 

@@ -330,7 +330,7 @@ public class SmartQTest {
 
         queue2.acknowledge(consumer1.getTask().getId());
 
-        assertEquals(queue3.queueSize(),3);
+        assertEquals(3, queue3.queueSize());
 
         consumer2.join();
 
@@ -341,7 +341,7 @@ public class SmartQTest {
 
         queue3.acknowledge(consumer2.getTask().getId());
 
-        assertEquals(queue3.queueSize(),2);
+        assertEquals(2, queue3.queueSize());
 
         consumer3.join();
         assertTrue("Consumer 3 is done", consumer3.isDone());
@@ -377,32 +377,16 @@ public class SmartQTest {
     }
 
     @Test
-    public void can_lock_and_unlock() throws InterruptedException {
-        TaskStore<Task> store = makeStore();
-
-        ThreadedLocker locker = new ThreadedLocker(store);
-        store.lock();
-
-        locker.start();
-
-        assertFalse("Locker is not done - waiting for unlock",locker.isDone());
-
-        store.unlock();
-
-        locker.join();
-
-        assertTrue("Locker is done", locker.isDone());
-    }
-
-    @Test
     public void can_wait_and_wakeup() throws InterruptedException {
         TaskStore<Task> store = makeStore();
 
-        ThreadedLocker locker = new ThreadedLocker(store);
+        ThreadedWaiter locker = new ThreadedWaiter(store);
 
         locker.start();
 
         assertFalse("Locker is not done - waiting for signal", locker.isDone());
+
+        Thread.sleep(500);
 
         store.signalChange();
 
@@ -433,30 +417,6 @@ public class SmartQTest {
             return done;
         }
     }
-
-    private static class ThreadedLocker extends Thread {
-        private final TaskStore<Task> store;
-        private boolean done;
-
-        private ThreadedLocker(TaskStore<Task> store) {
-            this.store = store;
-        }
-
-        @Override
-        public void run() {
-            try {
-                store.lock();
-            } catch (InterruptedException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
-            }
-            done = true;
-        }
-
-        private boolean isDone() {
-            return done;
-        }
-    }
-
 
     private static class ThreadedRunner extends Thread {
         private final SmartQ<Task,DefaultTaskResult> queue;

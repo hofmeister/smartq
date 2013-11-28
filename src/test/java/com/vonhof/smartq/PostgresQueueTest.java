@@ -23,6 +23,7 @@ public class PostgresQueueTest extends SmartQTest {
     @After
     public void tearDown() throws SQLException {
         store.dropTable();
+        store.close();
     }
 
     protected TaskStore<Task> makeStore()  {

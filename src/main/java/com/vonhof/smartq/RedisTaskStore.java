@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 
 public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
@@ -309,7 +310,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         return getQueuedETA(null);
     }
 
-    @Override
+
     public void unlock() {
         final Jedis jedis = jedisPool.getResource();
         try {
@@ -327,7 +328,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         }
     }
 
-    @Override
+
     public void lock() throws InterruptedException {
         while (true) {
             final Jedis jedis = jedisPool.getResource();
@@ -348,6 +349,20 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
                 log.error("Got exception while waiting for lock", ex);
                 jedisPool.returnBrokenResource(jedis);
             }
+        }
+    }
+
+    @Override
+    public synchronized <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
+        lock();
+        try {
+            return callable.call();
+        } catch (InterruptedException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            unlock();
         }
     }
 

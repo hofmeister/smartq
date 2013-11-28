@@ -14,7 +14,6 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -23,13 +22,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     private static final Logger log = Logger.getLogger(PostgresTaskStore.class);
-    private static final long WAIT_TIMEOUT = 10000;
 
     private final int STATE_QUEUED = 1;
     private final int STATE_RUNNING = 2;
@@ -37,13 +33,27 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     private final String url;  //jdbc:postgresql://host:port/database
     private final String username;
     private final String password;
+    private volatile boolean isolated = false;
 
     private String tableName = "queue";
-    private PostgresClient client;
+
+    private ThreadLocal<PostgresClient> client = new ThreadLocal<PostgresClient>() {
+        @Override
+        protected PostgresClient initialValue() {
+            try {
+                PostgresClient client = new PostgresClient();
+                client.startListening();
+                return client;
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    };
 
     private final Class<T> taskClass;
 
     private DocumentSerializer documentSerializer = new JacksonDocumentSerializer();
+
 
     public PostgresTaskStore(Class<T> taskClass) throws SQLException {
         this(taskClass, "jdbc:postgresql://localhost/smartq", "porta", "porta");
@@ -66,24 +76,20 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     private void connect() throws SQLException {
-        client = new PostgresClient();
+        client.get();
     }
 
     private synchronized PostgresClient client() {
-        return client;
+        return client.get();
     }
-
-
-
 
     @Override
     public T get(UUID id) {
         try {
             return client().queryOne(String.format("SELECT * FROM \"%s\" WHERE id = ?", tableName), id);
         } catch (SQLException e) {
-            log.error(e);
+            throw new RuntimeException(e);
         }
-        return null;
     }
 
     @Override
@@ -96,7 +102,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         try {
             client().update(String.format("DELETE FROM \"%s\" WHERE id = ?", tableName), id);
         } catch (SQLException e) {
-            log.error(e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -113,7 +119,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                     task.getEstimatedDuration()
                     );
         } catch (Exception e) {
-            log.error(e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -121,7 +127,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         try {
             client().update(String.format("DELETE FROM \"%s\"", tableName));
         } catch (SQLException e) {
-            log.error(e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -134,7 +140,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                     STATE_RUNNING,
                     task.getId());
         } catch (Exception e) {
-            log.error(e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -183,9 +189,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         try {
             return client().queryStringSet(String.format("SELECT DISTINCT type from \"%s\"", tableName));
         } catch (SQLException e) {
-            log.error(e);
+            throw new RuntimeException(e);
         }
-        return Collections.EMPTY_SET;
     }
 
     @Override
@@ -198,27 +203,33 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         return client().sum(STATE_QUEUED);
     }
 
-    private static final Lock lock = new ReentrantLock();
-
     @Override
-    public void unlock() {
-        //lock.unlock();
-    }
+    public synchronized <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
+        try {
+            boolean isolatedInThis = false;
+            if (!isolated) {
+                client().connection.setAutoCommit(false);
+                client().lockTable();
+                isolated = isolatedInThis = true;
+            }
 
-    @Override
-    public void lock() throws InterruptedException {
-        //lock.lock();
+            U result = callable.call();
+            if (isolatedInThis) {
+                client().connection.commit();
+                client().connection.setAutoCommit(true);
+            }
+            return result;
+        } catch (Exception e) {
+            try {
+                client().connection.rollback();
+            } catch (SQLException e1) {}
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public synchronized void waitForChange() throws InterruptedException {
-        try {
-            new Listener(this).start();
-            wait();
-        } catch (SQLException e) {
-            log.error(e);
-        }
-
+        this.wait();
     }
 
     @Override
@@ -227,7 +238,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             client().pgNotify();
             log.debug("Send PG notification");
         } catch (SQLException e) {
-            log.error(e);
+            throw new RuntimeException(e);
         }
     }
 
@@ -247,15 +258,23 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         client().update(String.format("DROP TABLE \"%s\"",tableName));
     }
 
+    public void close() throws SQLException {
+        client().connection.close();
+    }
+
     private class PostgresClient {
         private final Connection connection;
         private final PGConnection pgconn;
+        private final Listener listener = new Listener();
 
         private PostgresClient() throws SQLException {
             connection = DriverManager.getConnection(url, username, password);
             connection.setAutoCommit(true);
             pgconn = (PGConnection) connection;
-            pgListen();
+        }
+
+        public void startListening() throws SQLException {
+            listener.start();
         }
 
         private void lockTable() throws SQLException {
@@ -383,9 +402,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                             ).iterator();
                 }
             } catch (SQLException e) {
-                log.error(e);
+                throw new RuntimeException(e);
             }
-            return Collections.EMPTY_LIST.iterator();
         }
 
         public long count(int state) {
@@ -402,10 +420,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                             String.format("SELECT count(*) as count FROM \"%s\" WHERE state = ?", tableName), state);
                 }
             } catch (SQLException e) {
-                log.error(e);
+                throw new RuntimeException(e);
             }
-
-            return 0;
         }
 
         public long sum(int state) {
@@ -422,10 +438,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                             state,type);
                 }
             } catch (SQLException e) {
-                log.error(e);
+                throw new RuntimeException(e);
             }
-
-            return 0;
         }
 
 
@@ -479,17 +493,22 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     private class Listener extends Thread {
-        private final PostgresClient client;
-        private final PostgresTaskStore store;
-        private Listener(PostgresTaskStore store) throws SQLException {
+        private Listener() {
             super("pg-queue-listener");
-            client = new PostgresClient();
-            client.pgListen();
-            this.store = store;
+
         }
 
         @Override
         public void run() {
+            final PostgresTaskStore store = PostgresTaskStore.this;
+            final PostgresClient client;
+            try {
+                client = new PostgresClient();
+                client.pgListen();
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+
             while(true) {
                 try {
                     if (client.hasNotifications()) {
@@ -499,16 +518,15 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                         }
                     }
                 } catch (SQLException e) {
-                    log.error(e);
                     synchronized (store) {
                         store.notifyAll();
                     }
-                    return;
+                    throw new RuntimeException(e);
                 }
 
                 synchronized (this) {
                     try {
-                        wait(100);
+                        wait(1000);
                     } catch (InterruptedException e) {
                         return;
                     }

@@ -27,6 +27,7 @@ public class PostgresTaskStoreTest {
     @After
     public void tearDown() throws SQLException {
         store.dropTable();
+        store.close();
     }
 
     private PostgresTaskStore<Task> makeStore()  {

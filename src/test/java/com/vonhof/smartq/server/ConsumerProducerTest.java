@@ -12,7 +12,9 @@ import org.junit.Test;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
@@ -352,7 +354,7 @@ public class ConsumerProducerTest {
 
         assertTrue(consumerHandler.taskIds.contains(task1.getId()));
 
-        consumer1.acknowledge(task1.getId());
+        consumerHandler.consumerMap.get(task1.getId()).acknowledge(task1.getId());
 
         queue.submit(task2);
         queue.submit(task3);
@@ -373,10 +375,12 @@ public class ConsumerProducerTest {
 
         private int done = 0;
         private List<UUID> taskIds = new ArrayList<UUID>();
+        private Map<UUID,SmartQConsumer<Task>> consumerMap = new HashMap<UUID, SmartQConsumer<Task>>();
 
         @Override
         public void taskReceived(SmartQConsumer<Task> consumer, Task task) {
             try {
+                consumerMap.put(task.getId(),consumer);
                 taskIds.add(task.getId());
                 Thread.sleep(100); //Do some work
                 done++;

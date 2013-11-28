@@ -9,6 +9,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class SmartQ<T extends Task,U extends Serializable>  {
@@ -141,26 +142,22 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     }
     
     protected CountMap<String> getTypeETA() throws InterruptedException {
-        CountMap<String> typeETA = new CountMap<String>();
+        return getStore().isolatedChange(new Callable<CountMap<String>>() {
+            @Override
+            public CountMap<String> call() throws Exception {
+                final CountMap<String> typeETA = new CountMap<String>();
+                Iterator<T> running = getStore().getRunning();
+                while(running.hasNext()) {
+                    T task = running.next();
+                    typeETA.increment(task.getType(), task.getEstimatedTimeLeft());
+                }
 
-        getStore().lock();
-
-        try {
-            Iterator<T> running = getStore().getRunning();
-            while(running.hasNext()) {
-                T task = running.next();
-                typeETA.increment(task.getType(), task.getEstimatedTimeLeft());
+                for(String type: getStore().getTypes()) {
+                    typeETA.increment(type, getStore().getQueuedETA(type));
+                }
+                return typeETA;
             }
-
-            for(String type: getStore().getTypes()) {
-                typeETA.increment(type, getStore().getQueuedETA(type));
-            }
-
-        } finally {
-            getStore().unlock();
-        }
-
-        return typeETA;
+        });
     }
 
 
@@ -198,18 +195,18 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     }
 
     
-    public boolean submit(T task) throws InterruptedException {
+    public boolean submit(final T task) throws InterruptedException {
 
-        getStore().lock();
-        try {
-            getStore().queue(task);
-            getStore().signalChange();
+        getStore().isolatedChange(new Callable<T>() {
+            @Override
+            public T call() throws Exception {
+                getStore().queue(task);
+                getStore().signalChange();
 
-            triggerSubmit(task);
-        } finally {
-            getStore().unlock();
-        }
-
+                triggerSubmit(task);
+                return task;
+            }
+        });
 
         return true;
     }
@@ -228,23 +225,24 @@ public class SmartQ<T extends Task,U extends Serializable>  {
 
     }
     
-    public boolean cancel(T task, boolean reschedule) throws InterruptedException {
+    public boolean cancel(final T task, final boolean reschedule) throws InterruptedException {
         if (task == null) {
             return false;
         }
-        getStore().lock();
 
-        try {
-            log.debug("Cancelled task");
-            getStore().remove(task);
+        getStore().isolatedChange(new Callable<T>() {
+            @Override
+            public T call() throws Exception {
+                log.debug("Cancelled task");
+                getStore().remove(task);
 
-            if (!reschedule) {
-                getStore().signalChange();
-                triggerDone(task);
+                if (!reschedule) {
+                    getStore().signalChange();
+                    triggerDone(task);
+                }
+                return task;
             }
-        } finally {
-            getStore().unlock();
-        }
+        });
 
         if (reschedule) {
             task.reset();
@@ -255,26 +253,27 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     }
 
     
-    public void acknowledge(UUID id, U response) throws InterruptedException {
-            T task = getStore().get(id);
-            if (task == null) {
-                throw new IllegalArgumentException("Task not found: " + id);
+    public void acknowledge(final UUID id, U response) throws InterruptedException {
+        getStore().isolatedChange(new Callable<T>() {
+
+            @Override
+            public T call() throws Exception {
+                T task = getStore().get(id);
+                if (task == null) {
+                    throw new IllegalArgumentException("Task not found: " + id);
+                }
+
+                task.setState(Task.State.DONE);
+                task.setEnded(WatchProvider.currentTime());
+
+                log.debug("Acked task");
+                getStore().remove(task);
+                getStore().signalChange();
+
+                triggerDone(task);
+                return task;
             }
-
-        getStore().lock();
-
-        try {
-            task.setState(Task.State.DONE);
-            task.setEnded(WatchProvider.currentTime());
-
-            log.debug("Acked task");
-            getStore().remove(task);
-            getStore().signalChange();
-
-            triggerDone(task);
-        } finally {
-            getStore().unlock();
-        }
+        });
     }
 
     public void interrupt() {
@@ -282,51 +281,56 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         store.signalChange();
     }
     
-    public T acquire(String taskType) throws InterruptedException {
+    public T acquire(final String taskType) throws InterruptedException {
 
             interrupted = false;
             T selectedTask = null;
 
             while(selectedTask == null) {
-
-                getStore().lock();
-
-                CountMap<String> tasksRunning = new CountMap<String>();
-                log.debug(String.format("Running tasks: %s", getStore().runningCount()));
-
                 try {
+                    selectedTask = getStore().isolatedChange(new Callable<T>() {
+                        @Override
+                        public T call() throws Exception {
+                            CountMap<String> tasksRunning = new CountMap<String>();
+                            log.debug(String.format("Running tasks: %s", getStore().runningCount()));
 
-                    log.debug(String.format("Queue queueSize: %s", getStore().queueSize()));
+                            log.debug(String.format("Queue queueSize: %s", getStore().queueSize()));
 
-                    Iterator<T> queued = taskType != null ? getStore().getQueued(taskType) : getStore().getQueued();
-                    while(queued.hasNext()) {
-                        final T task = queued.next();
+                            Iterator<T> queued = taskType != null ? getStore().getQueued(taskType) : getStore().getQueued();
+                            T taskLookup = null;
+                            while(queued.hasNext()) {
+                                final T task = queued.next();
 
-                        int limit = getTaskTypeRateLimit(task.getType());
+                                int limit = getTaskTypeRateLimit(task.getType());
 
-                        if (limit > 0) {
-                            if (!tasksRunning.contains(task.getType())) {
-                                tasksRunning.set(task.getType(), getStore().runningCount(task.getType()));
+                                if (limit > 0) {
+                                    if (!tasksRunning.contains(task.getType())) {
+                                        tasksRunning.set(task.getType(), getStore().runningCount(task.getType()));
+                                    }
+                                    long running = tasksRunning.get(task.getType());
+
+                                    if (running >= limit) {
+                                        log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",task.getType(),running, limit));
+                                        continue;
+                                    }
+                                }
+
+                                taskLookup = task;
+                                if (taskLookup != null) {
+                                    break;
+                                }
                             }
-                            long running = tasksRunning.get(task.getType());
 
-                            if (running >= limit) {
-                                log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",task.getType(),running, limit));
-                                continue;
+                            if (taskLookup != null) {
+                                acquireTask(taskLookup);
                             }
+
+                            return taskLookup;
                         }
+                    });
 
-                        selectedTask = task;
-                        break;
-                    }
-
-                    if (selectedTask != null) {
-
-                        acquireTask(selectedTask);
-                    }
-
-                } finally {
-                    getStore().unlock();
+                } catch (Exception e) {
+                    log.error(e);
                 }
 
 
@@ -365,25 +369,25 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     }
 
     public void requeueAll() throws InterruptedException {
-        getStore().lock();
-        try {
-            List<T> tasks = new LinkedList<T>();
-            Iterator<T> running = getStore().getRunning();
-            while(running.hasNext()) {
-                tasks.add(running.next());
+        getStore().isolatedChange(new Callable<Object>() {
+            @Override
+            public Object call() throws InterruptedException {
+                List<T> tasks = new LinkedList<T>();
+                Iterator<T> running = getStore().getRunning();
+                while(running.hasNext()) {
+                    tasks.add(running.next());
+                }
+
+                for(T task : tasks) {
+                    getStore().remove(task);
+                    task.reset();
+                    getStore().queue(task);
+
+                    log.debug("Requeued task: " + task.getId());
+                }
+                return null;
             }
-
-            for(T task : tasks) {
-                getStore().remove(task);
-                task.reset();
-                getStore().queue(task);
-
-                log.debug("Requeued task: " + task.getId());
-            }
-
-        } finally {
-            getStore().unlock();
-        }
+        });
 
     }
 
@@ -397,22 +401,22 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         log.debug("Acquired task");
     }
 
-    public T acquireTask(UUID taskId) throws InterruptedException {
-        getStore().lock();
-        try {
-            T t = getStore().get(taskId);
-            if (t == null) {
-                return null;
-            }
-            if (t.isRunning()) {
-                return null; //Already running
-            }
+    public T acquireTask(final UUID taskId) throws InterruptedException {
+        return getStore().isolatedChange(new Callable<T>() {
+            @Override
+            public T call() throws Exception {
+                T t = getStore().get(taskId);
+                if (t == null) {
+                    return null;
+                }
+                if (t.isRunning()) {
+                    return null; //Already running
+                }
 
-            acquireTask(t);
+                acquireTask(t);
+                return t;
+            }
+        });
 
-            return t;
-        } finally {
-            getStore().unlock();
-        }
     }
 }

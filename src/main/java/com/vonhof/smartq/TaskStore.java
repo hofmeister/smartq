@@ -4,6 +4,7 @@ package com.vonhof.smartq;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 
 public interface TaskStore<T extends Task> {
 
@@ -39,9 +40,7 @@ public interface TaskStore<T extends Task> {
 
     public long getQueuedETA();
 
-    public void unlock();
-
-    public void lock() throws InterruptedException;
+    public <U> U isolatedChange(Callable<U> callable) throws InterruptedException;
 
     public void waitForChange() throws InterruptedException;
 
