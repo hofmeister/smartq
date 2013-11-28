@@ -162,10 +162,13 @@ public class SmartQConsumer<T extends Task> {
                     } catch (IOException e) {
                         log.trace("Failed to reconnect to " + hostAddress + ". Waiting " + retryTimeout + "ms before trying again");
                         try {
-                            Thread.sleep(retryTimeout);
+                            synchronized (this) {
+                                wait(retryTimeout);
+                            }
                         } catch (InterruptedException e1) {
                             return;
                         }
+
                         continue;
                     } catch (Exception e) {
                         log.warn("Could not reconnect", e);

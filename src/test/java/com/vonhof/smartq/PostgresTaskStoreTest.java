@@ -1,32 +1,41 @@
 package com.vonhof.smartq;
 
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
 
+import java.io.IOException;
+import java.sql.SQLException;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
-public class RedisTaskStoreTest {
+public class PostgresTaskStoreTest {
 
-    private RedisTaskStore<Task> makeStore() {
-        JedisPoolConfig jedisPoolConfig = new JedisPoolConfig();
-        jedisPoolConfig.setMaxActive(1);
+    private PostgresTaskStore<Task> store = null;
 
-        final JedisPool jedis = new JedisPool(new JedisPoolConfig(),"localhost",6379,0);
-        RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis,Task.class);
-        store.setNamespace(UUID.randomUUID().toString().replaceAll("(?uis)[^A-Z0-9]","")+"/");
-        store.reset();
+    @Before
+    public void setup() throws IOException, SQLException {
+        store = new PostgresTaskStore<Task>(Task.class);
+        store.setTableName("queue_"+UUID.randomUUID().toString().replaceAll("-", ""));
+        store.createTable();
+    }
+
+    @After
+    public void tearDown() throws SQLException {
+        store.dropTable();
+    }
+
+    private PostgresTaskStore<Task> makeStore()  {
         return store;
     }
 
     @Test
-    public void can_add_and_remove() {
-        RedisTaskStore<Task> store = makeStore();
+    public void can_add_and_remove() throws SQLException {
+        PostgresTaskStore<Task> store = makeStore();
 
         assertEquals("SmartQ is empty",0,store.queueSize());
         assertEquals("Running is empty",0,store.runningCount());

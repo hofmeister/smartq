@@ -357,7 +357,7 @@ public class ConsumerProducerTest {
         queue.submit(task2);
         queue.submit(task3);
 
-        Thread.sleep(500);
+        Thread.sleep(1500);
 
         assertEquals(0, queue.queueSize());
         assertEquals(2, queue.runningCount());

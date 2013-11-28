@@ -3,13 +3,17 @@ package com.vonhof.smartq.example;
 
 import com.vonhof.smartq.DefaultTaskResult;
 import com.vonhof.smartq.MemoryTaskStore;
+import com.vonhof.smartq.PostgresTaskStore;
 import com.vonhof.smartq.QueueListener;
 import com.vonhof.smartq.RedisTaskStore;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
+import com.vonhof.smartq.TaskStore;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
+import java.io.IOException;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Timer;
@@ -20,12 +24,32 @@ public class Benchmark {
     public static final BenchmarkListener BENCHMARK_LISTENER = new BenchmarkListener();
     public static final MemoryTaskStore<Task> STORE = new MemoryTaskStore<Task>();
 
-    public static void main (String[] args) throws InterruptedException {
-        final JedisPool jedis = new JedisPool(new JedisPoolConfig(),"localhost");
+    private static TaskStore<Task> makeRedisStore() {
+        JedisPoolConfig jConf = new JedisPoolConfig();
+        jConf.setMaxActive(50);
+        jConf.setMaxWait(50);
+
+        final JedisPool jedis = new JedisPool(jConf,"localhost",6379,0);
         RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis, Task.class);
-        store.setNamespace("benchmark");
+        store.setNamespace("benchmark/");
+        return store;
+    }
+
+    private static TaskStore<Task> makePGStore() throws SQLException, IOException {
+        PostgresTaskStore<Task> store = new PostgresTaskStore<Task>(Task.class);
+        store.setTableName("benchmark_queue");
+        store.createTable();
         store.reset();
-        final SmartQ<Task, DefaultTaskResult> queue = new SmartQ<Task, DefaultTaskResult>(store);
+        return store;
+    }
+
+    private static TaskStore<Task> makeStore() throws SQLException, IOException {
+        return makePGStore();
+    }
+
+    public static void main (String[] args) throws InterruptedException, IOException, SQLException {
+
+        final SmartQ<Task, DefaultTaskResult> queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
         queue.addListener(BENCHMARK_LISTENER);
 
         List<StressSubscriber> subscribers = new ArrayList<StressSubscriber>();
@@ -36,8 +60,10 @@ public class Benchmark {
             subscriber.start();
         }
 
+        System.out.println("Submitting tasks");
 
-        for(int i = 0; i < 100000; i++) {
+
+        for(int i = 0; i < 1000; i++) {
             queue.submit(new Task()
                     .withPriority((int) Math.round(Math.random() * 10)));
         }
@@ -130,12 +156,10 @@ public class Benchmark {
     private static class StressSubscriber extends Thread {
         private final SmartQ<Task, DefaultTaskResult> queue;
 
-        private StressSubscriber(int num) {
+        private StressSubscriber(int num) throws IOException, SQLException {
             super("Stress subscriber "+num);
-            final JedisPool jedis = new JedisPool(new JedisPoolConfig(),"localhost");
-            final RedisTaskStore<Task> store = new RedisTaskStore<Task>(jedis, Task.class);
-            store.setNamespace("benchmark");
-            queue = new SmartQ<Task, DefaultTaskResult>(store);
+
+            queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
             queue.addListener(BENCHMARK_LISTENER);
         }
 
@@ -147,6 +171,9 @@ public class Benchmark {
                     queue.acknowledge(t.getId());
                 } catch (InterruptedException e) {
                     return;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    continue;
                 }
             }
         }

@@ -206,6 +206,7 @@ public class SmartQProducer<T extends Task> {
             }
             while(isAlive(session) && isBusy(session)) {
                 if (clientTask.get(session.getRemoteAddress()).contains(task.getId())) {
+                    log.debug("Waiting for client to tell us what it knows: " + session.getRemoteAddress());
                     break; //We are resending something
                 }
 
@@ -369,8 +370,11 @@ public class SmartQProducer<T extends Task> {
                 if (sessionOffset >= managedSessions.size()) {
                     sessionOffset = 0;
                     synchronized (this) {
+                        log.debug("Waiting for new sessions to become available");
                         wait();
                     }
+                    log.debug("Got new sessions - restarting");
+                    managedSessions = new LinkedList<IoSession>(acceptor.getManagedSessions().values());
                     continue;
                 }
 
