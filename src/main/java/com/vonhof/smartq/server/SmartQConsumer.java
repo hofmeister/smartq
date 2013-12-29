@@ -151,7 +151,7 @@ public class SmartQConsumer<T extends Task> {
                     return;
                 }
 
-                log.debug("Was unexpectedly disconnected from  " + hostAddress+". Will try to reconnect. " + SmartQConsumer.this);
+                log.warn("Was unexpectedly disconnected from  " + hostAddress+". Will try to reconnect. " + SmartQConsumer.this);
 
                 while(true) {
                     try {

@@ -22,7 +22,7 @@ public class DemoConsumer {
                 @Override
                 public void taskReceived(SmartQConsumer<Task> consumer, Task task) throws Exception {
                     try {
-                        Thread.sleep(15000 + (int)(60000 * Math.random()));
+                        Thread.sleep(5000 + (int)(5000 * Math.random()));
                     } catch (InterruptedException e) {
                         return;
                     }

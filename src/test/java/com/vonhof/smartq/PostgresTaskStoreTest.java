@@ -35,7 +35,7 @@ public class PostgresTaskStoreTest {
     }
 
     @Test
-    public void can_add_and_remove() throws SQLException {
+    public void can_add_and_remove() throws SQLException, InterruptedException {
         PostgresTaskStore<Task> store = makeStore();
 
         assertEquals("SmartQ is empty",0,store.queueSize());

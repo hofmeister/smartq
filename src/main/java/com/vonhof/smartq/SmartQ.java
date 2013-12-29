@@ -173,7 +173,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
      * Amount of running task
      * @return
      */
-    public long runningCount() {
+    public long runningCount() throws InterruptedException {
         return getStore().runningCount();
     }
 
@@ -182,7 +182,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
      * Amount of queued task
      * @return
      */
-    public long queueSize() {
+    public long queueSize() throws InterruptedException {
         return getStore().queueSize();
     }
 
@@ -190,7 +190,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
      * Returns total size of queue + currently running tasks
      * @return
      */
-    public long size() {
+    public long size() throws InterruptedException {
         return getStore().queueSize() + getStore().runningCount();
     }
 

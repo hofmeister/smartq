@@ -165,32 +165,58 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public long queueSize() {
-        return client().count(STATE_QUEUED);
+    public long queueSize() throws InterruptedException {
+        return isolatedChange(new Callable<Long>() {
+            @Override
+            public Long call() throws Exception {
+                return client().count(STATE_QUEUED);
+            }
+        });
     }
 
     @Override
-    public long runningCount() {
-        return client().count(STATE_RUNNING);
+    public long runningCount() throws InterruptedException {
+        return isolatedChange(new Callable<Long>() {
+            @Override
+            public Long call() throws Exception {
+                return client().count(STATE_RUNNING);
+            }
+        });
     }
 
     @Override
-    public long queueSize(String type) {
-        return client().count(STATE_QUEUED, type);
+    public long queueSize(final String type) throws InterruptedException {
+        return isolatedChange(new Callable<Long>() {
+            @Override
+            public Long call() throws Exception {
+                return client().count(STATE_QUEUED, type);
+            }
+        });
     }
 
     @Override
-    public long runningCount(String type) {
-        return client().count(STATE_RUNNING, type);
+    public long runningCount(final String type) throws InterruptedException {
+        return isolatedChange(new Callable<Long>() {
+            @Override
+            public Long call() throws Exception {
+                return client().count(STATE_RUNNING, type);
+            }
+        });
     }
 
     @Override
-    public Set<String> getTypes() {
-        try {
-            return client().queryStringSet(String.format("SELECT DISTINCT type from \"%s\"", tableName));
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
+    public Set<String> getTypes() throws InterruptedException {
+        return isolatedChange(new Callable<Set<String>>() {
+            @Override
+            public Set<String> call() throws Exception {
+                try {
+                    return client().queryStringSet(String.format("SELECT DISTINCT type from \"%s\"", tableName));
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        });
+
     }
 
     @Override
@@ -236,7 +262,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     public synchronized void signalChange() {
         try {
             client().pgNotify();
-            log.debug("Send PG notification");
+            log.trace("Send PG notification");
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -512,7 +538,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             while(true) {
                 try {
                     if (client.hasNotifications()) {
-                        log.debug("PG returned notifications");
+                        log.trace("PG returned notifications");
                         synchronized (store) {
                             store.notifyAll();
                         }

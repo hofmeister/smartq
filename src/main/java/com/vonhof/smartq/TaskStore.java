@@ -26,15 +26,15 @@ public interface TaskStore<T extends Task> {
 
     public Iterator<T> getRunning(String type);
 
-    public long queueSize();
+    public long queueSize() throws InterruptedException;
 
-    public long runningCount();
+    public long runningCount() throws InterruptedException;
 
-    public long queueSize(String type);
+    public long queueSize(String type) throws InterruptedException;
 
-    public long runningCount(String type);
+    public long runningCount(String type) throws InterruptedException;
 
-    public Set<String> getTypes();
+    public Set<String> getTypes() throws InterruptedException;
 
     public long getQueuedETA(String type);
 

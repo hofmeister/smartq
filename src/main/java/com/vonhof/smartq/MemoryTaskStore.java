@@ -155,6 +155,8 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
             lock.lock();
             tid = lTid;
             log.debug("Locked TID: "+lTid);
+        } else {
+            log.debug("Within TID: "+lTid);
         }
         try {
             return callable.call();
