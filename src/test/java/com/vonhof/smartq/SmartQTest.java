@@ -3,7 +3,13 @@ package com.vonhof.smartq;
 
 import org.junit.Test;
 
-import static org.junit.Assert.*;
+import java.util.Stack;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 
 public class SmartQTest {
@@ -315,44 +321,57 @@ public class SmartQTest {
         assertEquals(queue2.queueSize(),4);
         assertEquals(queue3.queueSize(),4);
 
-        ThreadedConsumer consumer1 = new ThreadedConsumer(queue1,"queue1");
-        ThreadedConsumer consumer2 = new ThreadedConsumer(queue2,"queue2");
-        ThreadedConsumer consumer3 = new ThreadedConsumer(queue3,"queue3");
+        long queueSize = queue1.queueSize();
 
-        //Consumer 1 go ahead
-        consumer1.start();
-        consumer1.join();
+        Stack<ThreadedConsumer> consumers = new Stack<ThreadedConsumer>();
+        consumers.add(new ThreadedConsumer(queue1,"queue1"));
+        consumers.add(new ThreadedConsumer(queue2,"queue2"));
+        consumers.add(new ThreadedConsumer(queue3,"queue3"));
+        consumers.add(new ThreadedConsumer(queue1,"queue4"));
 
-        assertEquals("Queue is decreased by 1", 3, queue3.queueSize());
-        assertEquals("Queue has 1 running task", 1, queue3.runningCount());
-        assertTrue("Consumer 1 acquired task", consumer1.hasAcquired());
+        //Start all consumers
+        for(ThreadedConsumer consumer : consumers) {
+            consumer.start();
+        }
 
-        //Consumer 2 go ahead
-        consumer2.start();
+        int maxRetries = 10;
+        int retries = 0;
 
-        assertFalse("Consumer 2 is waiting for consumer 1 ack", consumer2.hasAcquired());
+        while(!consumers.isEmpty()) {
 
-        queue2.acknowledge(consumer1.getTask().getId());
+            ThreadedConsumer consumerWithAcquire = null;
 
-        consumer2.join();
+            for(ThreadedConsumer consumer : consumers) {
+                if (consumer.hasAcquired()) {
+                    consumerWithAcquire = consumer;
+                    break;
+                }
+            }
 
-        assertTrue("Consumer 2 acquired task", consumer2.hasAcquired());
-        assertEquals("Queue is decreased by 1", 2, queue3.queueSize());
-        assertEquals("Queue has 1 running task", 1, queue3.runningCount());
+            if (consumerWithAcquire == null) {
+                Thread.sleep(100);
+                retries++;
+                if (retries > maxRetries) {
+                    fail("Failed to find consumer that acquired task");
+                }
+                continue;
+            }
 
-        //Consumer 3 go ahead
+            retries = 0;
 
-        consumer3.start();
+            consumers.remove(consumerWithAcquire);
 
-        assertFalse("Consumer 3 is waiting for ack", consumer3.hasAcquired());
+            for(ThreadedConsumer consumer : consumers) {
+                assertFalse("Other consumer is waiting for ack", consumer.hasAcquired());
+            }
 
-        queue3.acknowledge(consumer2.getTask().getId());
+            consumerWithAcquire.join();
 
-        consumer3.join();
+            assertEquals("Queue is decreased by 1", --queueSize, queue1.queueSize());
+            assertEquals("Queue has 1 running task", 1, queue1.runningCount());
 
-        assertTrue("Consumer 3 acquired task", consumer3.hasAcquired());
-        assertEquals("Queue is decreased by 1", 1, queue3.queueSize());
-        assertEquals("Queue has 1 running task", 1, queue3.runningCount());
+            queue1.acknowledge(consumerWithAcquire.getTask().getId());
+        }
     }
 
     @Test
