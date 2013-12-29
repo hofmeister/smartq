@@ -319,61 +319,40 @@ public class SmartQTest {
         ThreadedConsumer consumer2 = new ThreadedConsumer(queue2,"queue2");
         ThreadedConsumer consumer3 = new ThreadedConsumer(queue3,"queue3");
 
+        //Consumer 1 go ahead
         consumer1.start();
         consumer1.join();
 
+        assertEquals("Queue is decreased by 1", 3, queue3.queueSize());
+        assertEquals("Queue has 1 running task", 1, queue3.runningCount());
+        assertTrue("Consumer 1 acquired task", consumer1.hasAcquired());
+
+        //Consumer 2 go ahead
         consumer2.start();
 
-        assertTrue("Consumer 1 is done", consumer1.isDone());
-        assertFalse("Consumer 2 is waiting for ack", consumer2.isDone());
-        assertFalse("Consumer 3 is waiting for ack",consumer3.isDone());
+        assertFalse("Consumer 2 is waiting for consumer 1 ack", consumer2.hasAcquired());
 
         queue2.acknowledge(consumer1.getTask().getId());
 
-        assertEquals(3, queue3.queueSize());
-
         consumer2.join();
+
+        assertTrue("Consumer 2 acquired task", consumer2.hasAcquired());
+        assertEquals("Queue is decreased by 1", 2, queue3.queueSize());
+        assertEquals("Queue has 1 running task", 1, queue3.runningCount());
+
+        //Consumer 3 go ahead
 
         consumer3.start();
 
-        assertTrue("Consumer 2 is done", consumer2.isDone());
-        assertFalse("Consumer 3 is waiting for ack",consumer3.isDone());
+        assertFalse("Consumer 3 is waiting for ack", consumer3.hasAcquired());
 
         queue3.acknowledge(consumer2.getTask().getId());
 
-        assertEquals(2, queue3.queueSize());
-
         consumer3.join();
-        assertTrue("Consumer 3 is done", consumer3.isDone());
-    }
 
-    private static class ThreadedConsumer extends Thread {
-        private final SmartQ<Task,DefaultTaskResult> queue;
-        private boolean done = false;
-        private Task task;
-
-        private ThreadedConsumer(SmartQ<Task, DefaultTaskResult> queue,String name) {
-            super(name);
-            this.queue = queue;
-        }
-
-        @Override
-        public void run() {
-            try {
-                task = queue.acquire();
-                done = true;
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
-
-        private boolean isDone() {
-            return done;
-        }
-
-        private Task getTask() {
-            return task;
-        }
+        assertTrue("Consumer 3 acquired task", consumer3.hasAcquired());
+        assertEquals("Queue is decreased by 1", 1, queue3.queueSize());
+        assertEquals("Queue has 1 running task", 1, queue3.runningCount());
     }
 
     @Test
@@ -415,6 +394,35 @@ public class SmartQTest {
 
         private boolean isDone() {
             return done;
+        }
+    }
+
+    private static class ThreadedConsumer extends Thread {
+        private final SmartQ<Task,DefaultTaskResult> queue;
+        private boolean done = false;
+        private Task task;
+
+        private ThreadedConsumer(SmartQ<Task, DefaultTaskResult> queue,String name) {
+            super(name);
+            this.queue = queue;
+        }
+
+        @Override
+        public void run() {
+            try {
+                task = queue.acquire();
+                done = true;
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        private boolean hasAcquired() {
+            return done;
+        }
+
+        private Task getTask() {
+            return task;
         }
     }
 
