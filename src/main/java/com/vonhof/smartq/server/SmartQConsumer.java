@@ -196,8 +196,10 @@ public class SmartQConsumer<T extends Task> {
             activeTasks.clear();
         }
         if (!queuedMessages.isEmpty()) {
+            List<Command> cmds = new LinkedList<Command>(queuedMessages);
             log.debug("Executing queued messages: " + queuedMessages.size());
-            for(Command cmd: queuedMessages) {
+            queuedMessages.clear();
+            for(Command cmd: cmds) {
                 switch (cmd.getType()) {
                     case ACK:
                         acknowledge((UUID)cmd.getArgs()[0]);
@@ -210,8 +212,6 @@ public class SmartQConsumer<T extends Task> {
                         break;
                 }
             }
-
-            queuedMessages.clear();
         }
     }
 
