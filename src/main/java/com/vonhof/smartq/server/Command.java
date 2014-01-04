@@ -8,7 +8,7 @@ import java.util.UUID;
 
 public class Command implements Serializable {
     private final Type type;
-    private Object[] args;
+    private final Object[] args;
 
     public Command(Type type,Object ... args) {
         this.type = type;
@@ -51,7 +51,7 @@ public class Command implements Serializable {
         ;
 
 
-        private Class[] argTypes;
+        private final Class[] argTypes;
 
         Type(Class ... args) {
             this.argTypes = args;

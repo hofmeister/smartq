@@ -4,8 +4,8 @@ package com.vonhof.smartq;
 import java.io.Serializable;
 
 public class DefaultTaskResult implements Serializable{
-    public final String message;
-    public final boolean ok;
+    private final String message;
+    private final boolean ok;
 
     public DefaultTaskResult(String message, boolean ok) {
         this.message = message;

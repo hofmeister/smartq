@@ -45,8 +45,6 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
     private String namespace = "smartq/";
 
-    private final String lockMutux = "LOCK_MUTEX";
-
     private DocumentSerializer documentSerializer = new JacksonDocumentSerializer();
 
     public RedisTaskStore(JedisPool jedis,Class<T> taskClass) {
@@ -117,7 +115,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             jedis.del(key(listId));
 
             if (!ids.isEmpty()) {
-                jedis.del(ids.toArray(new String[0]));
+                jedis.del(ids.toArray(new String[ids.size()]));
             }
         } finally {
             jedisPool.returnResource(jedis);
@@ -329,7 +327,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     }
 
 
-    public void lock() throws InterruptedException {
+    public void lock() {
         while (true) {
             final Jedis jedis = jedisPool.getResource();
             try {
@@ -489,10 +487,6 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         @Override
         public void onMessage(String channel, String message) {
             unsubscribe();
-
-            synchronized (lockMutux) {
-                lockMutux.notifyAll();
-            }
         }
 
     }

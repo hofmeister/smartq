@@ -134,7 +134,7 @@ public class ConsumerProducerTest {
             }
         }
 
-        assertTrue("Consumer handler was executed succesfully", consumerHandler.done);
+        assertTrue("Consumer handler was executed successfully", consumerHandler.done);
         assertEquals("We have 1 task in queue",1, queue.queueSize());
         assertEquals("We have 1 running task", 1, queue.runningCount());
 

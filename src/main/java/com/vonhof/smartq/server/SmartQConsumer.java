@@ -44,8 +44,8 @@ public class SmartQConsumer<T extends Task> {
 
     private final SmartQConsumerHandler<T> responseHandler;
 
-    private Map<UUID, T> activeTasks = new ConcurrentHashMap<UUID, T>();
-    private List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
+    private final Map<UUID, T> activeTasks = new ConcurrentHashMap<UUID, T>();
+    private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
     private final Executor executor = Executors.newFixedThreadPool(1);
     private Timer timer;
 
@@ -130,7 +130,7 @@ public class SmartQConsumer<T extends Task> {
         connector = null;
     }
 
-    protected synchronized void reconnectLater() throws InterruptedException {
+    protected synchronized void reconnectLater() {
         if (closing) {
             closing = false;
             return;
@@ -330,9 +330,7 @@ public class SmartQConsumer<T extends Task> {
         @Override
         public void run() {
             if (!checkSession()) {
-                try {
-                    reconnectLater();
-                } catch (InterruptedException e) {}
+                reconnectLater();
             }
         }
     }

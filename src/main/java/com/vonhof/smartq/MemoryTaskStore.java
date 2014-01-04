@@ -19,6 +19,15 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
 
     private final Lock lock = new ReentrantLock();
 
+    private ThreadLocal<UUID> localTID = new ThreadLocal<UUID>() {
+        @Override
+        protected UUID initialValue() {
+            return UUID.randomUUID();
+        }
+    };
+
+    private volatile UUID tid = null;
+
 
     @Override
     public synchronized T get(UUID id) {
@@ -26,7 +35,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized void remove(Task task) {
+    public synchronized void remove(T task) {
         tasks.remove(task.getId());
         queued.remove(task);
         running.remove(task);
@@ -137,15 +146,6 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
         }
         return eta;
     }
-
-    ThreadLocal<UUID> localTID = new ThreadLocal<UUID>() {
-        @Override
-        protected UUID initialValue() {
-            return UUID.randomUUID();
-        }
-    };
-
-    private volatile UUID tid = null;
 
     @Override
     public  <U> U isolatedChange(Callable<U> callable) throws InterruptedException {

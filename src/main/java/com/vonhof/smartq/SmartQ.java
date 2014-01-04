@@ -21,7 +21,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     private volatile int consumers = 0;
     private final TaskStore<T> store;
 
-    private List<QueueListener> listeners = new ArrayList<QueueListener>();
+    private final List<QueueListener> listeners = new ArrayList<QueueListener>();
     private boolean interrupted = false;
 
     public SmartQ(final TaskStore<T> store) {
@@ -105,7 +105,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     }
 
     /**
-     * Get estimated time untill queue no longer is blocked for the given task type.
+     * Get estimated time until queue no longer is blocked for the given task type.
      * @param taskType
      * @return
      */
@@ -161,7 +161,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     }
 
 
-    protected long getTypeETA(String type) throws InterruptedException {
+    protected long getTypeETA(String type) {
         long eta = getStore().getQueuedETA(type);
         for(T task: getRunningTasks(type)) {
             eta += task.getEstimatedTimeLeft();
@@ -316,9 +316,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                                 }
 
                                 taskLookup = task;
-                                if (taskLookup != null) {
-                                    break;
-                                }
+                                break;
                             }
 
                             if (taskLookup != null) {
@@ -340,7 +338,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                     log.debug("Woke up!");
                     if (interrupted) {
                         interrupted = false;
-                        throw new AcquireInterrupedException();
+                        throw new AcquireInterruptedException();
                     }
                 }
             }

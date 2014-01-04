@@ -36,7 +36,7 @@ public class SocketProxy {
 
     private CountDownLatch closed = new CountDownLatch(1);
 
-    public List<Bridge> connections = new LinkedList<Bridge>();
+    public final List<Bridge> connections = new LinkedList<Bridge>();
 
     private int receiveBufferSize = -1;
 
@@ -88,7 +88,7 @@ public class SocketProxy {
         return new ServerSocket();
     }
 
-    private Socket createSocket() throws Exception {
+    private Socket createSocket() {
         return new Socket();
     }
 

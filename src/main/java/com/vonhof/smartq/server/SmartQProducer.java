@@ -1,7 +1,7 @@
 package com.vonhof.smartq.server;
 
 
-import com.vonhof.smartq.AcquireInterrupedException;
+import com.vonhof.smartq.AcquireInterruptedException;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
 import org.apache.log4j.Logger;
@@ -194,10 +194,7 @@ public class SmartQProducer<T extends Task> {
             }
 
             List<UUID> tasks = clientTask.get(session.getRemoteAddress());
-            if (tasks == null) {
-                return true;
-            }
-            return (tasks.size() >= taskLimit);
+            return tasks == null || (tasks.size() >= taskLimit);
         }
 
         public void sendTask(IoSession session, T task) throws InterruptedException {
@@ -399,7 +396,7 @@ public class SmartQProducer<T extends Task> {
 
                     try {
                         requestHandler.sendTask(session, queue.acquire());
-                    } catch (AcquireInterrupedException ex) {
+                    } catch (AcquireInterruptedException ex) {
                         continue;
                     }
                 }

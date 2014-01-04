@@ -407,7 +407,7 @@ public class SmartQTest {
                 store.waitForChange();
                 done = true;
             } catch (InterruptedException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                e.printStackTrace();
             }
         }
 

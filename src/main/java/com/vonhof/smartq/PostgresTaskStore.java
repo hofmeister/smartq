@@ -37,7 +37,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     private String tableName = "queue";
 
-    private ThreadLocal<PostgresClient> client = new ThreadLocal<PostgresClient>() {
+    private final ThreadLocal<PostgresClient> client = new ThreadLocal<PostgresClient>() {
         @Override
         protected PostgresClient initialValue() {
             try {
@@ -75,7 +75,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         this.tableName = tableName;
     }
 
-    private void connect() throws SQLException {
+    private void connect() {
         client.get();
     }
 
@@ -232,17 +232,16 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public synchronized <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
         try {
-            boolean isolatedInThis = false;
+            boolean isolationStartedInThisCall = false;
             if (!isolated) {
                 client().connection.setAutoCommit(false);
                 client().lockTable();
-                isolated = isolatedInThis = true;
+                isolated = isolationStartedInThisCall = true;
             }
 
             U result = callable.call();
-            if (isolatedInThis) {
+            if (isolationStartedInThisCall) {
                 client().connection.commit();
-                client().connection.setAutoCommit(true);
             }
             return result;
         } catch (Exception e) {
@@ -250,6 +249,10 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 client().connection.rollback();
             } catch (SQLException e1) {}
             throw new RuntimeException(e);
+        } finally {
+            try {
+                client().connection.setAutoCommit(true);
+            } catch (SQLException e) {}
         }
     }
 
@@ -299,7 +302,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             pgconn = (PGConnection) connection;
         }
 
-        public void startListening() throws SQLException {
+        public void startListening() {
             listener.start();
         }
 
@@ -346,8 +349,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             PreparedStatement stmt = stmt(sql, args);
 
             ResultSet result = stmt.executeQuery();
-            List<Map<String,Object>> out = new ArrayList<Map<String, Object>>();
-            while (result.next()) {
+
+            if (result.next()) {
                 return result.getLong(1);
             }
             return 0;
@@ -481,7 +484,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         }
 
         public void pgListen() throws SQLException {
-            execute(String.format("LISTEN \"%s_event\"",tableName));
+            execute(String.format("LISTEN \"%s_event\"", tableName));
         }
 
         public void pgNotify() throws SQLException {
@@ -491,30 +494,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         public boolean hasNotifications() throws SQLException {
             query("SELECT 1"); //Trigger notification push
             PGNotification[] notifications = pgconn.getNotifications();
-            if (notifications != null) {
-                return notifications.length > 0;
-            }
-            return false;
-        }
-
-        public <T> T callInTransaction(Callable<T> callable) throws SQLException {
-            try {
-                T out = callable.call();
-                connection.commit();
-                return out;
-            } catch (Exception e) {
-                connection.rollback();
-            }
-            return null;
-        }
-
-        public void doInTransaction(Callable callable) throws SQLException {
-            try {
-                callable.call();
-                connection.commit();
-            } catch (Exception e) {
-                connection.rollback();
-            }
+            return notifications != null && notifications.length > 0;
         }
     }
 
@@ -526,7 +506,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
         @Override
         public void run() {
-            final PostgresTaskStore store = PostgresTaskStore.this;
+
             final PostgresClient client;
             try {
                 client = new PostgresClient();
@@ -539,13 +519,13 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 try {
                     if (client.hasNotifications()) {
                         log.trace("PG returned notifications");
-                        synchronized (store) {
-                            store.notifyAll();
+                        synchronized (PostgresTaskStore.this) {
+                            PostgresTaskStore.this.notifyAll();
                         }
                     }
                 } catch (SQLException e) {
-                    synchronized (store) {
-                        store.notifyAll();
+                    synchronized (PostgresTaskStore.this) {
+                        PostgresTaskStore.this.notifyAll();
                     }
                     throw new RuntimeException(e);
                 }
