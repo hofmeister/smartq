@@ -46,7 +46,7 @@ public class SmartQConsumer<T extends Task> {
 
     private final Map<UUID, T> activeTasks = new ConcurrentHashMap<UUID, T>();
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
-    private final Executor executor = Executors.newFixedThreadPool(1);
+    private final Executor executor = Executors.newFixedThreadPool( 10 );
     private Timer timer;
 
     private final UUID id;
@@ -226,7 +226,12 @@ public class SmartQConsumer<T extends Task> {
         if (send(new Command(Type.NACK, taskId, requeue))) {
             activeTasks.remove(taskId);
         }
+    }
 
+    public void failed(UUID taskId) throws InterruptedException {
+        if (send(new Command(Type.ERROR, taskId))) {
+            activeTasks.remove(taskId);
+        }
     }
 
     private boolean checkSession() {
@@ -311,7 +316,7 @@ public class SmartQConsumer<T extends Task> {
                         } catch (Exception ex) {
                             log.error("Failed to process task:" + task.getId() + " on " + SmartQConsumer.this, ex);
                             try {
-                                cancel(task.getId(),false);
+                                failed(task.getId());
                             } catch (InterruptedException e) {}
                         }
                     }

@@ -281,6 +281,18 @@ public class SmartQProducer<T extends Task> {
                     }
 
                     break;
+                case ERROR:
+                    if (!clientTask.get(session.getRemoteAddress()).contains(args[0])) {
+                        throw new Exception("Error received for unacquired task: " + args[0] + " for " + session.getRemoteAddress());
+                    } else {
+                        log.debug("Got ERROR for task " + args[0] + " from " + session.getRemoteAddress());
+                        try {
+                            queue.failed((UUID) args[0]);
+                        } finally {
+                            endTask(session, (UUID)args[0]);
+                        }
+                    }
+                    break;
 
             }
         }

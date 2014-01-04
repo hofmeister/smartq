@@ -17,6 +17,7 @@ public class Task<T extends Serializable> implements Serializable {
     private long ended = 0;
 
     private int priority = 1;
+    private int attempts = 0;
 
     private T data;
 
@@ -154,10 +155,18 @@ public class Task<T extends Serializable> implements Serializable {
         return this;
     }
 
+    public int getAttempts() {
+        return attempts;
+    }
+
+    public void setAttempts(int attempts) {
+        this.attempts = attempts;
+    }
+
 
     public static enum State {
         PENDING,
         RUNNING,
-        DONE
+        ERROR, DONE
     }
 }

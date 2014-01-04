@@ -1,6 +1,7 @@
 package com.vonhof.smartq;
 
 
+import com.vonhof.smartq.Task.State;
 import org.junit.Test;
 
 import java.util.Stack;
@@ -82,6 +83,41 @@ public class SmartQTest {
         assertEquals(task.getState(),Task.State.PENDING);
     }
 
+    @Test
+    public void tasks_can_fail() throws InterruptedException {
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+
+        Task task = new Task("test");
+
+        queue.submit(task);
+
+        assertEquals(queue.queueSize(),1);
+
+        queue.failed(task.getId());
+
+        assertEquals(queue.queueSize(),0);
+
+        assertEquals(queue.getStore().get(task.getId()).getState(), State.ERROR);
+    }
+
+    @Test
+    public void tasks_can_retry_if_failed() throws InterruptedException {
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+
+        Task task = new Task("test");
+
+        queue.setMaxRetries("test", 2);
+        queue.submit(task);
+
+        assertEquals(queue.queueSize(),1);
+
+        queue.failed(task.getId());
+
+        assertEquals(queue.queueSize(),1);
+
+        assertEquals(queue.getStore().get(task.getId()).getState(), State.PENDING);
+    }
+
 
     @Test
     public void tasks_can_be_rescheduled() throws InterruptedException {
@@ -107,7 +143,7 @@ public class SmartQTest {
     public void tasks_can_be_rate_limited_by_type() throws InterruptedException {
         SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
-        queue.setTaskTypeRateLimit("test",2);
+        queue.setRateLimit("test", 2);
 
         Task task1 = new Task("test");
         Task task2 = new Task("test");
@@ -142,7 +178,7 @@ public class SmartQTest {
     public void tasks_with_different_type_is_not_rate_limited() throws InterruptedException {
         SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
-        queue.setTaskTypeRateLimit("test",2);
+        queue.setRateLimit("test", 2);
 
         Task task1 = new Task("test").withPriority(4);
         Task task2 = new Task("test").withPriority(3);
@@ -260,7 +296,7 @@ public class SmartQTest {
 
         SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
-        queue.setTaskTypeRateLimit("a",1);
+        queue.setRateLimit("a", 1);
 
         Task task1 = new Task("a",1000);
         Task task2 = new Task("b",2000);
@@ -303,9 +339,9 @@ public class SmartQTest {
         SmartQ<Task,DefaultTaskResult> queue2 = makeNode(store);
         SmartQ<Task,DefaultTaskResult> queue3 = makeNode(store);
 
-        queue1.setTaskTypeRateLimit("test",1);
-        queue2.setTaskTypeRateLimit("test",1);
-        queue3.setTaskTypeRateLimit("test",1);
+        queue1.setRateLimit("test", 1);
+        queue2.setRateLimit("test", 1);
+        queue3.setRateLimit("test", 1);
 
         Task task1 = new Task("test",1000);
         Task task2 = new Task("test",2000);

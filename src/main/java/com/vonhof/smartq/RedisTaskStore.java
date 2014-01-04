@@ -1,5 +1,6 @@
 package com.vonhof.smartq;
 
+import com.vonhof.smartq.Task.State;
 import org.apache.log4j.Logger;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -22,6 +23,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     private static final String QUEUED_COUNT = "queued/count";
     private static final String QUEUED_ETA = "queued/eta";
     private static final String QUEUE_LIST = "tasks/queued";
+    private static final String ERROR_LIST = "tasks/failed";
 
     private static final String LOCK = "lock";
     private static final String CHANGES = "changes";
@@ -46,6 +48,8 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     private String namespace = "smartq/";
 
     private DocumentSerializer documentSerializer = new JacksonDocumentSerializer();
+
+    private volatile String currentLockId;
 
     public RedisTaskStore(JedisPool jedis,Class<T> taskClass) {
         this.jedisPool = jedis;
@@ -214,6 +218,31 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
+    public synchronized void failed(T task) {
+        remove(task);
+
+        final Jedis jedis = jedisPool.getResource();
+        try {
+
+            task.setState(State.ERROR);
+            writeTask(task, jedis);
+
+            jedis.zadd(key(ERROR_LIST), task.getPriority(), docId(task.getId()));
+
+        } catch (RuntimeException e) {
+            log.warn("Failed to move task to failed pool",e);
+            throw e;
+        } finally {
+            jedisPool.returnResource(jedis);
+        }
+    }
+
+    @Override
+    public synchronized Iterator<T> getFailed() {
+        return readTasks(ERROR_LIST);
+    }
+
+    @Override
     public synchronized Iterator<T> getQueued() {
         return readTasks(QUEUE_LIST);
     }
@@ -310,6 +339,9 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
 
     public void unlock() {
+        if (LOCK_ID.get().equals(currentLockId)) {
+            currentLockId = null;
+        }
         final Jedis jedis = jedisPool.getResource();
         try {
             log.trace("Attempting to unlock");
@@ -328,18 +360,23 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
 
     public void lock() {
+        if (LOCK_ID.get().equals(currentLockId)) {
+            log.debug("Already have lock for " + LOCK_ID.get());
+            return;
+        }
         while (true) {
             final Jedis jedis = jedisPool.getResource();
             try {
                 Long locked = jedis.setnx(key(LOCK), LOCK_ID.get());
                 if (locked > 0) {
                     jedis.expire(key(LOCK),30);
-                    log.trace("Store locked by me");
+                    log.debug("Store locked by " + LOCK_ID.get());
                     jedisPool.returnResource(jedis);
+                    currentLockId = LOCK_ID.get();
                     return;
                 }
 
-                log.trace("Store already locked - waiting for unlock");
+                log.debug("Store already locked - waiting for unlock for " + LOCK_ID.get());
                 jedis.subscribe(new LockSubscriber(), key("unlocked"));
                 log.trace("Unlock was detected");
                 jedisPool.returnResource(jedis);

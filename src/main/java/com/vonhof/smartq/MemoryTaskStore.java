@@ -1,5 +1,6 @@
 package com.vonhof.smartq;
 
+import com.vonhof.smartq.Task.State;
 import org.apache.log4j.Logger;
 
 import java.util.*;
@@ -12,8 +13,9 @@ import java.util.concurrent.locks.ReentrantLock;
 public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     private static final Logger log = Logger.getLogger(MemoryTaskStore.class);
     private final Map<UUID, T> tasks = new ConcurrentHashMap<UUID, T>();
-    private final List<T> queued = Collections.synchronizedList(new LinkedList<T>());
-    private final List<T> running = Collections.synchronizedList(new LinkedList<T>());
+    private final List<T> queuedTasks = Collections.synchronizedList(new LinkedList<T>());
+    private final List<T> runningTasks = Collections.synchronizedList(new LinkedList<T>());
+    private final List<T> failedTasks = Collections.synchronizedList(new LinkedList<T>());
     private final CountMap<String> runningTypeCount = new CountMap<String>();
     private final CountMap<String> queuedTypeCount = new CountMap<String>();
 
@@ -37,10 +39,10 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public synchronized void remove(T task) {
         tasks.remove(task.getId());
-        queued.remove(task);
-        running.remove(task);
-        queuedTypeCount.decrement(task.getType(),1);
+        queuedTasks.remove(task);
+        runningTasks.remove(task);
         runningTypeCount.decrement(task.getType(),1);
+        queuedTypeCount.decrement(task.getType(),1);
     }
 
     @Override
@@ -50,32 +52,46 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
 
     @Override
     public synchronized void queue(T task) {
+        task.setState(State.PENDING);
         tasks.put(task.getId(),task);
 
-        queued.add(task);
+        queuedTasks.add(task);
         queuedTypeCount.increment(task.getType(),1);
 
-        sort(queued);
+        sort(queuedTasks);
     }
 
     @Override
     public synchronized void run(T task) {
-        queued.remove(task);
+        task.setState(State.RUNNING);
+        queuedTasks.remove(task);
         queuedTypeCount.decrement(task.getType(), 1);
-        running.add(task);
+        runningTasks.add(task);
         runningTypeCount.increment(task.getType(),1);
 
-        sort(running);
+        sort(runningTasks);
+    }
+
+    @Override
+    public synchronized void failed(T task) {
+        task.setState(State.ERROR);
+        remove(task);
+        tasks.put(task.getId(),task);
+        failedTasks.add(task);
+    }
+
+    public synchronized Iterator<T> getFailed() {
+        return Collections.unmodifiableList(failedTasks).iterator();
     }
 
     public synchronized Iterator<T> getQueued() {
-        return Collections.unmodifiableList(queued).iterator();
+        return Collections.unmodifiableList(queuedTasks).iterator();
     }
 
     @Override
     public Iterator<T> getQueued(String type) {
         List<T> out = new LinkedList<T>();
-        for(T task : queued) {
+        for(T task : queuedTasks) {
             if (type.equalsIgnoreCase(task.getType())) {
                 out.add(task);
             }
@@ -86,13 +102,13 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     public synchronized Iterator<T> getRunning() {
-        return Collections.unmodifiableList(running).iterator();
+        return Collections.unmodifiableList(runningTasks).iterator();
     }
 
     @Override
     public Iterator<T> getRunning(String type) {
         List<T> out = new LinkedList<T>();
-        for(T task : running) {
+        for(T task : runningTasks) {
             if (type.equalsIgnoreCase(task.getType())) {
                 out.add(task);
             }
@@ -104,12 +120,12 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
 
     @Override
     public synchronized long queueSize() {
-        return queued.size();
+        return queuedTasks.size();
     }
 
     @Override
     public synchronized long runningCount() {
-        return running.size();
+        return runningTasks.size();
     }
 
     @Override
@@ -130,7 +146,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public long getQueuedETA(String type) {
         long eta = 0;
-        for(T task : queued) {
+        for(T task : queuedTasks) {
             if (type.equalsIgnoreCase(task.getType())) {
                 eta += task.getEstimatedDuration();
             }
@@ -141,7 +157,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public long getQueuedETA() {
         long eta = 0;
-        for(T task : queued) {
+        for(T task : queuedTasks) {
             eta += task.getEstimatedDuration();
         }
         return eta;

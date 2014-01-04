@@ -18,6 +18,10 @@ public interface TaskStore<T extends Task> {
 
     public void run(T task);
 
+    public void failed(T task);
+
+    public Iterator<T> getFailed();
+
     public Iterator<T> getQueued();
 
     public Iterator<T> getQueued(String type);
@@ -45,4 +49,6 @@ public interface TaskStore<T extends Task> {
     public void waitForChange() throws InterruptedException;
 
     public void signalChange();
+
+
 }

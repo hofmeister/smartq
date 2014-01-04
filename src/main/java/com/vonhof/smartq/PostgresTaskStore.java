@@ -1,6 +1,7 @@
 package com.vonhof.smartq;
 
 
+import com.vonhof.smartq.Task.State;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
 import org.postgresql.PGConnection;
@@ -29,6 +30,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     private final int STATE_QUEUED = 1;
     private final int STATE_RUNNING = 2;
+    private final int STATE_ERROR = 3;
 
     private final String url;  //jdbc:postgresql://host:port/database
     private final String username;
@@ -109,6 +111,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public void queue(T task) {
         try {
+            task.setState(State.PENDING);
             client().update(
                 String.format("INSERT INTO \"%s\" (id, content, state, type, priority, estimate) VALUES (?, ?, ?, ?, ?, ?)", tableName),
                     task.getId(),
@@ -134,6 +137,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public void run(T task) {
         try {
+            task.setState(State.RUNNING);
             client().update(
                 String.format("UPDATE \"%s\" SET content = ?,state = ? WHERE id = ?", tableName),
                     documentSerializer.serialize(task).getBytes("UTF-8"),
@@ -142,6 +146,25 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void failed(T task) {
+        try {
+            task.setState(State.ERROR);
+            client().update(
+                    String.format("UPDATE \"%s\" SET content = ?,state = ? WHERE id = ?", tableName),
+                    documentSerializer.serialize(task).getBytes("UTF-8"),
+                    STATE_ERROR,
+                    task.getId());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public Iterator<T> getFailed() {
+        return client().getList(STATE_ERROR);
     }
 
     @Override

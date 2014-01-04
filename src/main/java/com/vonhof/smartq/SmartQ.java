@@ -1,5 +1,6 @@
 package com.vonhof.smartq;
 
+import com.vonhof.smartq.Task.State;
 import org.apache.log4j.Logger;
 
 import java.io.Serializable;
@@ -17,6 +18,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     private static final Logger log = Logger.getLogger(SmartQ.class);
 
     private final Map<String, Integer> taskTypeRateLimits = new ConcurrentHashMap<String, Integer>();
+    private final Map<String, Integer> taskTypeRetryLimits = new ConcurrentHashMap<String, Integer>();
 
     private volatile int consumers = 0;
     private final TaskStore<T> store;
@@ -74,7 +76,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     protected int getConcurrency(String taskType) {
         int concurrency = getConcurrency();
 
-        int concurrencyLimit = getTaskTypeRateLimit(taskType);
+        int concurrencyLimit = getRateLimit(taskType);
         if (concurrencyLimit < 0) {
             return concurrency;
         } else {
@@ -88,7 +90,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
      * @param taskType
      * @param limit
      */
-    public final void setTaskTypeRateLimit(String taskType, int limit) {
+    public final void setRateLimit(String taskType, int limit) {
         taskTypeRateLimits.put(taskType, limit);
     }
 
@@ -97,9 +99,20 @@ public class SmartQ<T extends Task,U extends Serializable>  {
      * @param taskType
      * @return
      */
-    public final int getTaskTypeRateLimit(String taskType) {
+    public final int getRateLimit(String taskType) {
         if (taskTypeRateLimits.containsKey(taskType)) {
             return taskTypeRateLimits.get(taskType);
+        }
+        return -1;
+    }
+
+    public final void setMaxRetries(String taskType, int limit) {
+        taskTypeRetryLimits.put(taskType, limit);
+    }
+
+    public final int getMaxRetries(String taskType) {
+        if (taskTypeRetryLimits.containsKey(taskType)) {
+            return taskTypeRetryLimits.get(taskType);
         }
         return -1;
     }
@@ -219,7 +232,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         return cancel(task, false);
     }
 
-    public boolean cancel(UUID taskId, boolean reschedule) throws InterruptedException {
+    public boolean cancel(UUID taskId, final boolean reschedule) throws InterruptedException {
         T t = getStore().get(taskId);
         return cancel(t, reschedule);
 
@@ -235,6 +248,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
             public T call() throws Exception {
                 log.debug("Cancelled task");
                 getStore().remove(task);
+                task.setEnded(WatchProvider.currentTime());
 
                 if (!reschedule) {
                     getStore().signalChange();
@@ -276,6 +290,41 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         });
     }
 
+    public void failed(final UUID id) throws InterruptedException {
+
+        getStore().isolatedChange(new Callable<T>() {
+
+            @Override
+            public T call() throws Exception {
+                T task = getStore().get(id);
+                if (task == null) {
+                    throw new IllegalArgumentException("Task not found: " + id);
+                }
+
+                task.setState(State.ERROR);
+                task.setEnded(WatchProvider.currentTime());
+
+                log.debug("Task marked as failed");
+
+                int maxRetries = getMaxRetries(task.getType());
+                int attempts = task.getAttempts();
+
+                if (maxRetries > attempts) {
+                    getStore().remove(task);
+                    task.reset();
+                    task.setAttempts(attempts + 1);
+                    submit(task);
+                } else {
+                    getStore().failed(task);
+                    getStore().signalChange();
+                    triggerDone(task);
+                }
+
+                return task;
+            }
+        });
+    }
+
     public void interrupt() {
         interrupted = true;
         store.signalChange();
@@ -301,7 +350,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                             while(queued.hasNext()) {
                                 final T task = queued.next();
 
-                                int limit = getTaskTypeRateLimit(task.getType());
+                                int limit = getRateLimit(task.getType());
 
                                 if (limit > 0) {
                                     if (!tasksRunning.contains(task.getType())) {
@@ -310,7 +359,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                                     long running = tasksRunning.get(task.getType());
 
                                     if (running >= limit) {
-                                        log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",task.getType(),running, limit));
+                                        log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",task.getType(), running, limit));
                                         continue;
                                     }
                                 }
@@ -320,7 +369,10 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                             }
 
                             if (taskLookup != null) {
+                                log.debug(String.format("Found task %s for type %s", taskLookup.getId(), taskType));
                                 acquireTask(taskLookup);
+                            } else {
+                                log.debug(String.format("Found no tasks for type %s", taskType));
                             }
 
                             return taskLookup;
@@ -417,4 +469,6 @@ public class SmartQ<T extends Task,U extends Serializable>  {
         });
 
     }
+
+
 }

@@ -6,6 +6,7 @@ import com.vonhof.smartq.MemoryTaskStore;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.SocketProxy;
 import com.vonhof.smartq.Task;
+import com.vonhof.smartq.Task.State;
 import com.vonhof.smartq.TaskStore;
 import org.junit.Test;
 
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class ConsumerProducerTest {
@@ -247,8 +249,68 @@ public class ConsumerProducerTest {
 
         Thread.sleep(100);
 
+        assertEquals("The task is in error state", State.ERROR, queue.getStore().get(task.getId()).getState());
         assertEquals("The task was not auto-rescheduled", 0, queue.queueSize());
         assertEquals("The task is no longer running", 0, queue.runningCount());
+
+        consumer.close();
+        producer.close();
+    }
+
+    @Test
+    public void client_unhandled_exception_causes_retry_if_allowed() throws IOException, InterruptedException {
+        final SmartQProducer<Task> producer = makeProducer();
+
+        final SmartQ<Task, ?> queue = producer.getQueue();
+
+        final ControllableExceptionConsumerHandler consumerHandler = new ControllableExceptionConsumerHandler();
+        final SmartQConsumer<Task> consumer = producer.makeConsumer(consumerHandler);
+
+        final Task task = new Task("test").withId(UUID.randomUUID());
+        queue.setMaxRetries("test", 2);
+
+        assertEquals("Task has 0 attempts", 0, task.getAttempts());
+
+        queue.submit(task);
+
+        producer.listen();
+
+        assertEquals(0, producer.getConsumerCount());
+        assertEquals(1, queue.queueSize());
+        assertEquals(0, queue.runningCount());
+
+        consumer.connect();
+
+        Thread.sleep(100);
+
+        assertEquals(1, producer.getConsumerCount());
+        assertEquals(0, queue.queueSize());
+        assertEquals(1, queue.runningCount());
+
+        consumerHandler.wakeUp();
+        Thread.sleep(100);
+        consumerHandler.setThrowing(false);
+        Thread.sleep(200);
+
+
+        Task refreshedTask = queue.getStore().get(task.getId());
+
+        assertEquals("Task is in running state", State.RUNNING, refreshedTask.getState());
+        assertEquals("Task has 1 attempt", 1, refreshedTask.getAttempts());
+        assertEquals("The task is running again", 1, queue.runningCount());
+
+        consumerHandler.wakeUp();
+        Thread.sleep(100);
+
+
+        assertTrue("The task is done", consumerHandler.isDone());
+        consumer.acknowledge(task.getId());
+        Thread.sleep(100);
+
+        assertNull("The task is removed from the store", queue.getStore().get(task.getId()));
+        assertEquals("The task was no longer in queue", 0, queue.queueSize());
+        assertEquals("The task is no longer running", 0, queue.runningCount());
+
 
         consumer.close();
         producer.close();
@@ -429,6 +491,45 @@ public class ConsumerProducerTest {
             this.task = task;
             Thread.sleep(100); //Do some work
             throw new Exception("Something went wrong");
+        }
+    }
+
+    public static class ControllableExceptionConsumerHandler implements SmartQConsumerHandler<Task> {
+
+        private Task task;
+
+        private boolean throwing = true;
+        private boolean done = false;
+
+        public boolean isThrowing() {
+            return throwing;
+        }
+
+        public void setThrowing(boolean throwing) {
+            this.throwing = throwing;
+        }
+
+        public boolean isDone() {
+            return done;
+        }
+
+        public synchronized void wakeUp() {
+            notifyAll();
+        }
+
+        @Override
+        public void taskReceived(SmartQConsumer<Task> consumer, Task task) throws Exception {
+            this.task = task;
+            System.out.println("Waiting");
+            synchronized (this) {
+                wait();
+            }
+            System.out.println("Woke up");
+            if (throwing) {
+                throw new Exception("Something went wrong");
+            }
+            System.out.println("done");
+            done = true;
         }
     }
 }

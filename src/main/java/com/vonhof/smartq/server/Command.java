@@ -47,8 +47,8 @@ public class Command implements Serializable {
         READY(),
         ACK(UUID.class),
         NACK(UUID.class, Boolean.class),
-        RECOVER(Collection.class)
-        ;
+        RECOVER(Collection.class),
+        ERROR(UUID.class);
 
 
         private final Class[] argTypes;
