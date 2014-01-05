@@ -71,11 +71,11 @@ public class SmartQServer<T extends Task> {
     }
 
     public SmartQClient<T> makeClient() {
-        return new SmartQClient<T>(address);
+        return new SmartQClient<T>(address, 1);
     }
 
     public SmartQClient<T> makeClient(SmartQClientMessageHandler<T> handler) {
-        return new SmartQClient<T>(address, handler);
+        return new SmartQClient<T>(address, handler, 1);
     }
 
     public synchronized void listen() throws IOException {
@@ -137,9 +137,9 @@ public class SmartQServer<T extends Task> {
 
     private class RequestHandler extends IoHandlerAdapter {
         private final Map<SocketAddress,List<UUID>> clientTask = new ConcurrentHashMap<SocketAddress, List<UUID>>();
+        private final Map<SocketAddress,Integer> clientTaskLimit = new ConcurrentHashMap<SocketAddress, Integer>();
         private final Set<Long> sessionReady = new ConcurrentHashSet<Long>();
         private final Set<UUID> taskIds = new ConcurrentHashSet<UUID>();
-        private int taskLimit = 1;
 
         @Override
         public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
@@ -158,6 +158,13 @@ public class SmartQServer<T extends Task> {
 
         public boolean taskIsRunning(UUID id) {
             return taskIds.contains(id);
+        }
+
+        private int getTaskLimit(IoSession session) {
+            if (clientTaskLimit.containsKey(session.getRemoteAddress())) {
+                return clientTaskLimit.get(session.getRemoteAddress());
+            }
+            return 1;
         }
 
         public void registerTask(IoSession session, UUID id) {
@@ -209,7 +216,7 @@ public class SmartQServer<T extends Task> {
             }
 
             List<UUID> tasks = clientTask.get(session.getRemoteAddress());
-            return tasks == null || (tasks.size() >= taskLimit);
+            return tasks == null || (tasks.size() >= getTaskLimit(session));
         }
 
         public void sendTask(IoSession session, T task) throws InterruptedException {
@@ -274,6 +281,10 @@ public class SmartQServer<T extends Task> {
                     break;
                 case SUBSCRIBE:
                     if (!sessionReady.contains(session.getId())) {
+                        if (args.length > 0 && args[0] instanceof Integer) {
+                            clientTaskLimit.put(session.getRemoteAddress(), (Integer) args[0]);
+                        }
+
                         sessionReady.add(session.getId());
                         synchronized (taskEmitter) {
                             taskEmitter.notifyAll();
@@ -282,7 +293,7 @@ public class SmartQServer<T extends Task> {
                         queue.setSubscribers(subscriberCount.incrementAndGet());
 
                         if (log.isDebugEnabled()) {
-                            log.debug(String.format("Client started subscribing to tasks: %s . Subscribers: ",session.getRemoteAddress(),queue.getSubscribers()));
+                            log.debug(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: ",session.getRemoteAddress(), getTaskLimit(session), queue.getSubscribers()));
                         }
                     }
                     break;
@@ -375,6 +386,7 @@ public class SmartQServer<T extends Task> {
                 }
 
                 clientTask.remove(session.getRemoteAddress());
+                clientTaskLimit.remove(session.getRemoteAddress());
 
                 if (log.isDebugEnabled()) {
                     log.debug(String.format("Client connection dropped %s. Subscribers: ",session.getRemoteAddress(), queue.getSubscribers()));

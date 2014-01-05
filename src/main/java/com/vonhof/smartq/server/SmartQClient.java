@@ -31,6 +31,7 @@ public class SmartQClient<T extends Task> {
 
     private static final Logger log = Logger.getLogger(SmartQClient.class);
 
+
     private IoSession session = null;
     private NioSocketConnector connector = null;
 
@@ -46,7 +47,8 @@ public class SmartQClient<T extends Task> {
 
     private final Map<UUID, T> activeTasks = new ConcurrentHashMap<UUID, T>();
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
-    private final Executor executor = Executors.newFixedThreadPool( 10 );
+    private final Executor executor;
+    private final int threads;
     private Timer timer;
 
     private final UUID id;
@@ -54,18 +56,39 @@ public class SmartQClient<T extends Task> {
 
     /**
      * Creates a publish / subscribe queue client.
-     * @param hostAddress
-     * @param responseHandler
+     * @param hostAddress host to connect to
+     * @param responseHandler the handler will receive all tasks
+     * @param threads Determines how many concurrent tasks can be handled. Defaults to available processors
      */
-    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler<T> responseHandler) {
+    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler<T> responseHandler, int threads) {
         id = UUID.randomUUID();
         this.hostAddress = hostAddress;
         this.responseHandler = responseHandler;
+        this.executor = Executors.newFixedThreadPool( threads );
+        this.threads = threads;
+    }
+
+    /**
+     * Creates a publish / subscribe queue client.
+     * @param hostAddress host to connect to
+     * @param responseHandler the handler will receive all tasks
+     */
+    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler<T> responseHandler) {
+        this(hostAddress, responseHandler, Runtime.getRuntime().availableProcessors());
     }
 
     /**
      * Creates a publish-only client (will not receive messages)
-     * @param hostAddress
+     * @param hostAddress host to connect to
+     * @param threads Determines how many concurrent tasks can be handled. Defaults to available processors
+     */
+    public SmartQClient(InetSocketAddress hostAddress, int threads) {
+        this(hostAddress, null, threads);
+    }
+
+    /**
+     * Creates a publish-only client (will not receive messages)
+     * @param hostAddress host to connect to
      */
     public SmartQClient(InetSocketAddress hostAddress) {
         this(hostAddress, null);
@@ -211,7 +234,7 @@ public class SmartQClient<T extends Task> {
      */
     private synchronized void subscribe() throws InterruptedException {
         if (responseHandler != null) {
-            send(new Command(Type.SUBSCRIBE));
+            send(new Command(Type.SUBSCRIBE, threads));
         }
     }
 

@@ -46,7 +46,7 @@ public class Command implements Serializable {
     }
 
     public static enum Type {
-        SUBSCRIBE(),
+        SUBSCRIBE(Integer.class),
         ACK(UUID.class),
         NACK(UUID.class, Boolean.class),
         RECOVER(Collection.class),

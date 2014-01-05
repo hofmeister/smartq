@@ -324,7 +324,7 @@ public class ClientServerTest {
         final SmartQ<Task, ?> queue = server.getQueue();
 
         final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
-        final SmartQClient<Task> client = new SmartQClient<Task>(proxy.getAddress(), msgHandler);
+        final SmartQClient<Task> client = new SmartQClient<Task>(proxy.getAddress(), msgHandler, 1);
 
         client.setRetryTimeout(100);
 
