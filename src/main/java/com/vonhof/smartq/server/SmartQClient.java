@@ -64,7 +64,11 @@ public class SmartQClient<T extends Task> {
         id = UUID.randomUUID();
         this.hostAddress = hostAddress;
         this.responseHandler = responseHandler;
-        this.executor = Executors.newFixedThreadPool( threads );
+        if (threads > 0) {
+            this.executor = Executors.newFixedThreadPool( threads );
+        } else {
+            this.executor = null;
+        }
         this.threads = threads;
     }
 
@@ -80,18 +84,9 @@ public class SmartQClient<T extends Task> {
     /**
      * Creates a publish-only client (will not receive messages)
      * @param hostAddress host to connect to
-     * @param threads Determines how many concurrent tasks can be handled. Defaults to available processors
-     */
-    public SmartQClient(InetSocketAddress hostAddress, int threads) {
-        this(hostAddress, null, threads);
-    }
-
-    /**
-     * Creates a publish-only client (will not receive messages)
-     * @param hostAddress host to connect to
      */
     public SmartQClient(InetSocketAddress hostAddress) {
-        this(hostAddress, null);
+        this(hostAddress, null, 0);
     }
 
     public int getRetryTimeout() {

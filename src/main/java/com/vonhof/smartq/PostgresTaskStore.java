@@ -58,7 +58,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
 
     public PostgresTaskStore(Class<T> taskClass) throws SQLException {
-        this(taskClass, "jdbc:postgresql://localhost/smartq", "porta", "porta");
+        this(taskClass, "jdbc:postgresql://localhost/smartq", "postgres", "");
     }
 
     public PostgresTaskStore(Class<T> taskClass, String url, String username, String password) throws SQLException {

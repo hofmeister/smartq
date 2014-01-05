@@ -71,7 +71,7 @@ public class SmartQServer<T extends Task> {
     }
 
     public SmartQClient<T> makeClient() {
-        return new SmartQClient<T>(address, 1);
+        return new SmartQClient<T>(address);
     }
 
     public SmartQClient<T> makeClient(SmartQClientMessageHandler<T> handler) {
