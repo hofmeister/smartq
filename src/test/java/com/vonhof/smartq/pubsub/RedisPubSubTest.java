@@ -1,4 +1,4 @@
-package com.vonhof.smartq.server;
+package com.vonhof.smartq.pubsub;
 
 
 import com.vonhof.smartq.RedisTaskStore;
@@ -9,7 +9,7 @@ import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.UUID;
 
-public class RedisConsumerProducerTest extends ConsumerProducerTest {
+public class RedisPubSubTest extends PubSubTest {
 
     @Override
     protected TaskStore<Task> makeStore() {

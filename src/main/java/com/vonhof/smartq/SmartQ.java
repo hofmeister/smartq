@@ -20,7 +20,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     private final Map<String, Integer> taskTypeRateLimits = new ConcurrentHashMap<String, Integer>();
     private final Map<String, Integer> taskTypeRetryLimits = new ConcurrentHashMap<String, Integer>();
 
-    private volatile int consumers = 0;
+    private volatile int subscribers = 0;
     private final TaskStore<T> store;
 
     private final List<QueueListener> listeners = new ArrayList<QueueListener>();
@@ -31,20 +31,20 @@ public class SmartQ<T extends Task,U extends Serializable>  {
     }
 
 
-    public int getConsumers() {
-        return consumers;
+    public int getSubscribers() {
+        return subscribers;
     }
 
     public TaskStore<T> getStore() {
         return store;
     }
 
-    public void setConsumers(int consumers) {
-        this.consumers = consumers;
+    public void setSubscribers(int subscribers) {
+        this.subscribers = subscribers;
     }
 
     protected int getConcurrency() {
-        int concurrency = getConsumers();
+        int concurrency = getSubscribers();
         if (concurrency < 1) {
             concurrency = 1;
         }

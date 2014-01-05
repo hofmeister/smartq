@@ -1,4 +1,4 @@
-package com.vonhof.smartq.server;
+package com.vonhof.smartq.pubsub;
 
 
 import com.vonhof.smartq.PostgresTaskStore;
@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.UUID;
 
-public class PostgresConsumerProducerTest extends ConsumerProducerTest {
+public class PostgresPubSubTest extends PubSubTest {
 
     private PostgresTaskStore<Task> store = null;
 

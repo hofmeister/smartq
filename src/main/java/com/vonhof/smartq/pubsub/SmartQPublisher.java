@@ -1,4 +1,4 @@
-package com.vonhof.smartq.server;
+package com.vonhof.smartq.pubsub;
 
 
 import com.vonhof.smartq.AcquireInterruptedException;
@@ -31,28 +31,28 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class SmartQProducer<T extends Task> {
+public class SmartQPublisher<T extends Task> {
 
-    private static final Logger log = Logger.getLogger(SmartQProducer.class);
+    private static final Logger log = Logger.getLogger(SmartQPublisher.class);
 
     private final InetSocketAddress address;
     private final SmartQ<T,?> queue;
 
     private NioSocketAcceptor acceptor;
-    private final AtomicInteger consumers = new AtomicInteger(0);
+    private final AtomicInteger subscribers = new AtomicInteger(0);
     private final RequestHandler requestHandler = new RequestHandler();
     private TaskEmitter taskEmitter;
     private final Timer timer = new Timer();
 
 
-    public SmartQProducer(InetSocketAddress address, SmartQ queue) {
+    public SmartQPublisher(InetSocketAddress address, SmartQ queue) {
         this.address = address;
         this.queue = queue;
 
     }
 
-    public int getConsumerCount() {
-        return queue.getConsumers();
+    public int getSubscriberCount() {
+        return queue.getSubscribers();
     }
 
     public InetSocketAddress getAddress() {
@@ -63,8 +63,8 @@ public class SmartQProducer<T extends Task> {
         return queue;
     }
 
-    public SmartQConsumer<T> makeConsumer(SmartQConsumerHandler<T> handler) {
-        return new SmartQConsumer<T>(address, handler);
+    public SmartQSubscriber<T> makeSubscriber(SmartQSubscriberHandler<T> handler) {
+        return new SmartQSubscriber<T>(address, handler);
     }
 
     public synchronized void listen() throws IOException {
@@ -301,9 +301,9 @@ public class SmartQProducer<T extends Task> {
         public void sessionOpened(IoSession session) throws Exception {
             synchronized (clientTask) {
                 clientTask.put(session.getRemoteAddress(), Collections.synchronizedList(new ArrayList<UUID>()));
-                queue.setConsumers(consumers.incrementAndGet());
+                queue.setSubscribers(subscribers.incrementAndGet());
 
-                log.debug(String.format("Got new client on " + session.getRemoteAddress() + ". Consumers: " + queue.getConsumers()));
+                log.debug(String.format("Got new client on " + session.getRemoteAddress() + ". Subscribers: " + queue.getSubscribers()));
             }
 
             synchronized (taskEmitter) {
@@ -323,9 +323,9 @@ public class SmartQProducer<T extends Task> {
                 }
 
                 clientTask.remove(session.getRemoteAddress());
-                queue.setConsumers(consumers.decrementAndGet());
+                queue.setSubscribers(subscribers.decrementAndGet());
 
-                log.debug(String.format("Client connection dropped " + session.getRemoteAddress() + ". Consumers: " + queue.getConsumers()));
+                log.debug(String.format("Client connection dropped " + session.getRemoteAddress() + ". Subscribers: " + queue.getSubscribers()));
 
             }
         }

@@ -1,4 +1,4 @@
-package com.vonhof.smartq.server;
+package com.vonhof.smartq.pubsub;
 
 
 import java.io.Serializable;

@@ -7,7 +7,7 @@ import com.vonhof.smartq.RedisTaskStore;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.TaskStore;
-import com.vonhof.smartq.server.SmartQProducer;
+import com.vonhof.smartq.pubsub.SmartQPublisher;
 import org.apache.log4j.PropertyConfigurator;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
@@ -16,7 +16,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.sql.SQLException;
 
-public class DemoProducer {
+public class DemoPublisher {
     public static final InetSocketAddress ADDRESS = new InetSocketAddress("127.0.0.1",54321);
 
     private static TaskStore<Task> makeRedisStore() {
@@ -46,9 +46,9 @@ public class DemoProducer {
 
         //queue.requeueAll(); //If any was left as running - move them back to queue.
 
-        final SmartQProducer<Task> producer = new SmartQProducer<Task>(ADDRESS, queue);
+        final SmartQPublisher<Task> publisher = new SmartQPublisher<Task>(ADDRESS, queue);
 
-        producer.listen();
+        publisher.listen();
 
         Thread emitter = new Thread() {
             @Override

@@ -235,7 +235,7 @@ public class SmartQTest {
     }
 
     @Test
-    public void can_do_consumer_based_estimations() throws InterruptedException {
+    public void can_do_subscriber_based_estimations() throws InterruptedException {
         SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a",1000);
@@ -248,7 +248,7 @@ public class SmartQTest {
         queue.submit(task3);
         queue.submit(task4);
 
-        queue.setConsumers(2);
+        queue.setSubscribers(2);
 
         assertEquals(queue.queueSize(), 4);
 
@@ -290,7 +290,7 @@ public class SmartQTest {
 
 
     @Test
-    public void can_do_rate_limited_consumer_based_estimations() throws InterruptedException {
+    public void can_do_rate_limited_subscriber_based_estimations() throws InterruptedException {
 
         WatchProvider.currentTime(0); //Override time - to have better control
 
@@ -308,7 +308,7 @@ public class SmartQTest {
         queue.submit(task3);
         queue.submit(task4);
 
-        queue.setConsumers(2);
+        queue.setSubscribers(2);
 
         assertEquals(queue.queueSize(),4);
 
@@ -359,54 +359,54 @@ public class SmartQTest {
 
         long queueSize = queue1.queueSize();
 
-        Stack<ThreadedConsumer> consumers = new Stack<ThreadedConsumer>();
-        consumers.add(new ThreadedConsumer(queue1,"queue1"));
-        consumers.add(new ThreadedConsumer(queue2,"queue2"));
-        consumers.add(new ThreadedConsumer(queue3,"queue3"));
-        consumers.add(new ThreadedConsumer(queue1,"queue4"));
+        Stack<ThreadedSubscriber> subscribers = new Stack<ThreadedSubscriber>();
+        subscribers.add(new ThreadedSubscriber(queue1, "queue1"));
+        subscribers.add(new ThreadedSubscriber(queue2, "queue2"));
+        subscribers.add(new ThreadedSubscriber(queue3, "queue3"));
+        subscribers.add(new ThreadedSubscriber(queue1, "queue4"));
 
-        //Start all consumers
-        for(ThreadedConsumer consumer : consumers) {
-            consumer.start();
+        //Start all subscribers
+        for(ThreadedSubscriber subscriber : subscribers) {
+            subscriber.start();
         }
 
         int maxRetries = 10;
         int retries = 0;
 
-        while(!consumers.isEmpty()) {
+        while(!subscribers.isEmpty()) {
 
-            ThreadedConsumer consumerWithAcquire = null;
+            ThreadedSubscriber subscriberWithAcquire = null;
 
-            for(ThreadedConsumer consumer : consumers) {
-                if (consumer.hasAcquired()) {
-                    consumerWithAcquire = consumer;
+            for(ThreadedSubscriber subscriber : subscribers) {
+                if (subscriber.hasAcquired()) {
+                    subscriberWithAcquire = subscriber;
                     break;
                 }
             }
 
-            if (consumerWithAcquire == null) {
+            if (subscriberWithAcquire == null) {
                 Thread.sleep(100);
                 retries++;
                 if (retries > maxRetries) {
-                    fail("Failed to find consumer that acquired task");
+                    fail("Failed to find subscriber that acquired task");
                 }
                 continue;
             }
 
             retries = 0;
 
-            consumers.remove(consumerWithAcquire);
+            subscribers.remove(subscriberWithAcquire);
 
-            for(ThreadedConsumer consumer : consumers) {
-                assertFalse("Other consumer is waiting for ack", consumer.hasAcquired());
+            for(ThreadedSubscriber subscriber : subscribers) {
+                assertFalse("Other subscriber is waiting for ack", subscriber.hasAcquired());
             }
 
-            consumerWithAcquire.join();
+            subscriberWithAcquire.join();
 
             assertEquals("Queue is decreased by 1", --queueSize, queue1.queueSize());
             assertEquals("Queue has 1 running task", 1, queue1.runningCount());
 
-            queue1.acknowledge(consumerWithAcquire.getTask().getId());
+            queue1.acknowledge(subscriberWithAcquire.getTask().getId());
         }
     }
 
@@ -452,12 +452,12 @@ public class SmartQTest {
         }
     }
 
-    private static class ThreadedConsumer extends Thread {
+    private static class ThreadedSubscriber extends Thread {
         private final SmartQ<Task,DefaultTaskResult> queue;
         private boolean done = false;
         private Task task;
 
-        private ThreadedConsumer(SmartQ<Task, DefaultTaskResult> queue,String name) {
+        private ThreadedSubscriber(SmartQ<Task, DefaultTaskResult> queue, String name) {
             super(name);
             this.queue = queue;
         }
