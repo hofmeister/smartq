@@ -52,10 +52,23 @@ public class SmartQClient<T extends Task> {
     private final UUID id;
 
 
+    /**
+     * Creates a publish / subscribe queue client.
+     * @param hostAddress
+     * @param responseHandler
+     */
     public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler<T> responseHandler) {
         id = UUID.randomUUID();
         this.hostAddress = hostAddress;
         this.responseHandler = responseHandler;
+    }
+
+    /**
+     * Creates a publish-only client (will not receive messages)
+     * @param hostAddress
+     */
+    public SmartQClient(InetSocketAddress hostAddress) {
+        this(hostAddress, null);
     }
 
     public int getRetryTimeout() {
@@ -90,9 +103,12 @@ public class SmartQClient<T extends Task> {
             future.await(connectionTimeout);
             session = future.getSession();
 
-            log.debug(String.format("Connected to " + hostAddress + " - " + this));
+            if (log.isDebugEnabled()) {
+                log.debug("Connected to " + hostAddress + " - " + this);
+            }
+
             if (!reconnecting) {
-                ready();
+                subscribe();
             }
             timer.scheduleAtFixedRate(new HostPinger(),5000,1000);
         } catch (RuntimeIoException e) {
@@ -124,7 +140,9 @@ public class SmartQClient<T extends Task> {
         if (connector != null) {
             connector.dispose(false);
             if (!reconnecting) {
-                log.debug("Disconnected from " + hostAddress + " - " + this);
+                if (log.isDebugEnabled()) {
+                    log.debug("Disconnected from " + hostAddress + " - " + this);
+                }
             }
         }
         connector = null;
@@ -158,9 +176,11 @@ public class SmartQClient<T extends Task> {
                         connect();
                         reconnecting = false;
                         recover();
-                        ready();
+                        subscribe();
                     } catch (IOException e) {
-                        log.trace("Failed to reconnect to " + hostAddress + ". Waiting " + retryTimeout + "ms before trying again");
+                        if (log.isTraceEnabled()) {
+                            log.trace("Failed to reconnect to " + hostAddress + ". Waiting " + retryTimeout + "ms before trying again");
+                        }
                         try {
                             synchronized (this) {
                                 wait(retryTimeout);
@@ -180,8 +200,19 @@ public class SmartQClient<T extends Task> {
         }.start();
     }
 
-    private synchronized void ready() throws InterruptedException {
-        send(new Command(Type.READY));
+    public void publish(T task) throws InterruptedException {
+        send(new Command(Type.PUBLISH, task));
+    }
+
+    /**
+     * Send SUBSCRIBE command to server. Only sends this if a response handler is present (SUBSCRIBE indicates we are ready for
+     * messages).
+     * @throws InterruptedException
+     */
+    private synchronized void subscribe() throws InterruptedException {
+        if (responseHandler != null) {
+            send(new Command(Type.SUBSCRIBE));
+        }
     }
 
     private synchronized void recover() throws InterruptedException {
@@ -189,7 +220,10 @@ public class SmartQClient<T extends Task> {
             return;
         }
         if (!activeTasks.isEmpty()) {
-            log.debug("Sending recover request to newly opened host: " + activeTasks.size());
+            if (log.isDebugEnabled()) {
+                log.debug("Sending recover request to newly opened host: " + activeTasks.size());
+            }
+
             if (!send(new Command(Type.RECOVER, new ArrayList<UUID>(activeTasks.keySet())))) {
                 throw new RuntimeException("Timed out while waiting for recover");
             }
@@ -197,7 +231,11 @@ public class SmartQClient<T extends Task> {
         }
         if (!queuedMessages.isEmpty()) {
             List<Command> cmds = new LinkedList<Command>(queuedMessages);
-            log.debug("Executing queued messages: " + queuedMessages.size());
+
+            if (log.isDebugEnabled()) {
+                log.debug("Executing queued messages: " + queuedMessages.size());
+            }
+
             queuedMessages.clear();
             for(Command cmd: cmds) {
                 switch (cmd.getType()) {
@@ -207,8 +245,8 @@ public class SmartQClient<T extends Task> {
                     case NACK:
                         cancel((UUID)cmd.getArgs()[0],(Boolean)cmd.getArgs()[0]);
                         break;
-                    case READY:
-                        ready();
+                    case SUBSCRIBE:
+                        subscribe();
                         break;
                 }
             }
@@ -219,7 +257,6 @@ public class SmartQClient<T extends Task> {
         if (send(new Command(Type.ACK, taskId))) {
             activeTasks.remove(taskId);
         }
-
     }
 
     public void cancel(UUID taskId, boolean requeue) throws InterruptedException {
@@ -254,7 +291,9 @@ public class SmartQClient<T extends Task> {
             session.write(message);
             return true;
         } else if (!message.getType().equals(Type.RECOVER)) {
-            log.debug("Connection unavailable - command queued: " + message);
+            if (log.isInfoEnabled()) {
+                log.info("Connection unavailable - command queued: " + message);
+            }
             queuedMessages.add(message);
             if (!reconnecting) {
                 reconnectLater();
@@ -304,7 +343,10 @@ public class SmartQClient<T extends Task> {
             if (message instanceof Task) {
                 final T task = (T) message;
 
-                log.debug("Processing task: " + task.getId() + " on " + SmartQClient.this);
+                if (log.isDebugEnabled()) {
+                    log.debug("Processing task: " + task.getId() + " on " + SmartQClient.this);
+                }
+
                 activeTasks.put(task.getId(),task);
 
                 executor.execute(new Runnable() {
@@ -312,9 +354,12 @@ public class SmartQClient<T extends Task> {
                     public void run() {
                         try {
                             responseHandler.taskReceived(SmartQClient.this, task);
-                            log.debug("Task processed: " + task.getId() + " on " + SmartQClient.this);
+                            if (log.isDebugEnabled()) {
+                                log.debug("Task processed: " + task.getId() + " on " + SmartQClient.this);
+                            }
                         } catch (Exception ex) {
                             log.error("Failed to process task:" + task.getId() + " on " + SmartQClient.this, ex);
+
                             try {
                                 failed(task.getId());
                             } catch (InterruptedException e) {}

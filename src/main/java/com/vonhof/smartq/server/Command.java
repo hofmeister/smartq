@@ -1,6 +1,8 @@
 package com.vonhof.smartq.server;
 
 
+import com.vonhof.smartq.Task;
+
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collection;
@@ -44,11 +46,12 @@ public class Command implements Serializable {
     }
 
     public static enum Type {
-        READY(),
+        SUBSCRIBE(),
         ACK(UUID.class),
         NACK(UUID.class, Boolean.class),
         RECOVER(Collection.class),
-        ERROR(UUID.class);
+        ERROR(UUID.class),
+        PUBLISH(Task.class);
 
 
         private final Class[] argTypes;

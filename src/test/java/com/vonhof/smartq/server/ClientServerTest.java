@@ -66,7 +66,7 @@ public class ClientServerTest {
 
         server.listen();
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
@@ -74,7 +74,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(1, server.getClientCount());
+        assertEquals(1, server.getSubscriberCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
@@ -116,7 +116,7 @@ public class ClientServerTest {
 
         server.listen();
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
         assertEquals(2, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
@@ -124,7 +124,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals("We have 1 client", 1, server.getClientCount());
+        assertEquals("We have 1 client", 1, server.getSubscriberCount());
 
         assertEquals(1, queue.queueSize());
         assertEquals(1, queue.runningCount());
@@ -187,7 +187,7 @@ public class ClientServerTest {
 
         server.listen();
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
@@ -195,7 +195,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(1, server.getClientCount());
+        assertEquals(1, server.getSubscriberCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
@@ -211,7 +211,7 @@ public class ClientServerTest {
 
         Thread.sleep(500);
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
 
         assertEquals(0, queue.runningCount());
 
@@ -235,7 +235,7 @@ public class ClientServerTest {
 
         server.listen();
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
@@ -243,7 +243,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(1, server.getClientCount());
+        assertEquals(1, server.getSubscriberCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
@@ -275,7 +275,7 @@ public class ClientServerTest {
 
         server.listen();
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
@@ -283,7 +283,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(1, server.getClientCount());
+        assertEquals(1, server.getSubscriberCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
@@ -336,7 +336,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
@@ -344,7 +344,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(1, server.getClientCount());
+        assertEquals(1, server.getSubscriberCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
@@ -353,7 +353,7 @@ public class ClientServerTest {
 
         Thread.sleep(500);
 
-        assertEquals("Clients was disconnected", 0, server.getClientCount());
+        assertEquals("Clients was disconnected", 0, server.getSubscriberCount());
 
         client.acknowledge(task.getId()); //Client acks when offline
 
@@ -367,7 +367,7 @@ public class ClientServerTest {
 
         Thread.sleep(1500);
 
-        assertEquals("Client auto reconnects", 1, server.getClientCount());
+        assertEquals("Client auto reconnects", 1, server.getSubscriberCount());
 
         Thread.sleep(200);
 
@@ -402,7 +402,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(0, server.getClientCount());
+        assertEquals(0, server.getSubscriberCount());
 
         client1.connect();
         client2.connect();
@@ -410,7 +410,7 @@ public class ClientServerTest {
 
         Thread.sleep(100);
 
-        assertEquals(3, server.getClientCount());
+        assertEquals(3, server.getSubscriberCount());
 
         Thread.sleep(100);
 
@@ -429,6 +429,65 @@ public class ClientServerTest {
         client1.close();
         client2.close();
         client3.close();
+        server.close();
+    }
+
+    @Test
+    public void clients_can_publish_tasks() throws Exception {
+        final SmartQServer<Task> server = makeServer();
+
+        final ControllableExceptionClientMessageHandler msgHandler = new ControllableExceptionClientMessageHandler();
+        msgHandler.setThrowing(false);
+
+        final SmartQClient<Task> clientPublisher = server.makeClient();
+        final SmartQClient<Task> clientSubscriber = server.makeClient(msgHandler);
+
+        final Task task1 = new Task("test").withId(UUID.randomUUID());
+
+        server.listen();
+
+        Thread.sleep(100);
+
+        assertEquals(0, server.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
+
+        clientPublisher.connect();
+
+        Thread.sleep(100);
+
+        assertEquals("Publish-only clients do not count as subscriber", 0, server.getSubscriberCount());
+        assertEquals(1, server.getClientCount());
+
+        Thread.sleep(100);
+
+        clientPublisher.publish(task1);
+
+        Thread.sleep(100);
+
+        assertEquals(1, server.getQueue().queueSize());
+
+        clientSubscriber.connect();
+
+        Thread.sleep(200);
+
+        assertEquals(1, server.getSubscriberCount());
+        assertEquals(1, server.getQueue().runningCount());
+        assertEquals(2, server.getClientCount());
+
+        msgHandler.wakeUp();
+
+        Thread.sleep(200);
+
+        assertTrue(msgHandler.isDone());
+        clientSubscriber.acknowledge(task1.getId());
+
+        Thread.sleep(200);
+
+        assertEquals(0, server.getQueue().queueSize());
+        assertEquals(0, server.getQueue().runningCount());
+
+        clientPublisher.close();
+        clientSubscriber.close();
         server.close();
     }
 

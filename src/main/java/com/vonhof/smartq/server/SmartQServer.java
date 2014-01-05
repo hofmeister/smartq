@@ -39,10 +39,13 @@ public class SmartQServer<T extends Task> {
     private final SmartQ<T,?> queue;
 
     private NioSocketAcceptor acceptor;
-    private final AtomicInteger subscribers = new AtomicInteger(0);
+    private final AtomicInteger subscriberCount = new AtomicInteger(0);
+    private final AtomicInteger clientCount = new AtomicInteger(0);
+
     private final RequestHandler requestHandler = new RequestHandler();
     private TaskEmitter taskEmitter;
     private final Timer timer = new Timer();
+
 
 
     public SmartQServer(InetSocketAddress address, SmartQ queue) {
@@ -51,8 +54,12 @@ public class SmartQServer<T extends Task> {
 
     }
 
-    public int getClientCount() {
+    public int getSubscriberCount() {
         return queue.getSubscribers();
+    }
+
+    public int getClientCount() {
+        return clientCount.get();
     }
 
     public InetSocketAddress getAddress() {
@@ -61,6 +68,10 @@ public class SmartQServer<T extends Task> {
 
     public SmartQ<T,?> getQueue() {
         return queue;
+    }
+
+    public SmartQClient<T> makeClient() {
+        return new SmartQClient<T>(address);
     }
 
     public SmartQClient<T> makeClient(SmartQClientMessageHandler<T> handler) {
@@ -86,7 +97,9 @@ public class SmartQServer<T extends Task> {
         acceptor.setCloseOnDeactivation(true);
         acceptor.bind( address );
 
-        log.debug(String.format("Listening on " + address));
+        if (log.isInfoEnabled()) {
+            log.info(String.format("Listening on " + address));
+        }
 
         taskEmitter = new TaskEmitter();
         taskEmitter.start();
@@ -100,7 +113,9 @@ public class SmartQServer<T extends Task> {
         acceptor.dispose(true);
         acceptor = null;
 
-        log.debug(String.format("Stopped listening on " + address));
+        if (log.isInfoEnabled()) {
+            log.info(String.format("Stopped listening on " + address));
+        }
         queue.interrupt();
 
         if (taskEmitter != null) {
@@ -203,7 +218,9 @@ public class SmartQServer<T extends Task> {
             }
             while(isAlive(session) && isBusy(session)) {
                 if (clientTask.get(session.getRemoteAddress()).contains(task.getId())) {
-                    log.debug("Waiting for client to tell us what it knows: " + session.getRemoteAddress());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Waiting for client to tell us what it knows: " + session.getRemoteAddress());
+                    }
                     break; //We are resending something
                 }
 
@@ -211,13 +228,17 @@ public class SmartQServer<T extends Task> {
                     clientTask.wait(5000);
                 }
 
-                log.debug("Waiting for client to become available: " + session.getRemoteAddress());
+                if (log.isDebugEnabled()) {
+                    log.debug("Waiting for client to become available: " + session.getRemoteAddress());
+                }
             }
             if (!isAlive(session)) {
                 return;
             }
 
-            log.debug("Sending task to client: " + session.getRemoteAddress() + " - " + task.getId());
+            if (log.isDebugEnabled()) {
+                log.debug("Sending task to client: " + session.getRemoteAddress() + " - " + task.getId());
+            }
             registerTask(session, task.getId());
             session.write(task);
         }
@@ -238,19 +259,31 @@ public class SmartQServer<T extends Task> {
 
             switch (cmd.getType()) {
                 case RECOVER:
-                    log.debug("Got recover request from: " + session.getRemoteAddress());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Got recover request from: " + session.getRemoteAddress());
+                    }
                     Collection<UUID> taskIds = (Collection<UUID>)args[0];
                     for(UUID taskId : taskIds) {
-                        log.debug("Reacquire task: " + taskId);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Reacquire task: " + taskId);
+                        }
                         registerTask(session, taskId);
                         queue.acquireTask(taskId);
                     }
 
                     break;
-                case READY:
-                    sessionReady.add(session.getId());
-                    synchronized (taskEmitter) {
-                        taskEmitter.notifyAll();
+                case SUBSCRIBE:
+                    if (!sessionReady.contains(session.getId())) {
+                        sessionReady.add(session.getId());
+                        synchronized (taskEmitter) {
+                            taskEmitter.notifyAll();
+                        }
+
+                        queue.setSubscribers(subscriberCount.incrementAndGet());
+
+                        if (log.isDebugEnabled()) {
+                            log.debug(String.format("Client started subscribing to tasks: %s . Subscribers: ",session.getRemoteAddress(),queue.getSubscribers()));
+                        }
                     }
                     break;
                 case ACK:
@@ -258,7 +291,9 @@ public class SmartQServer<T extends Task> {
                     if (!clientTask.get(session.getRemoteAddress()).contains(args[0])) {
                         throw new Exception("Can not ack task that was not first acquired: " + args[0] + " for " + session.getRemoteAddress());
                     } else {
-                        log.debug("Got ACK for task " + args[0] + " from " + session.getRemoteAddress());
+                        if (log.isDebugEnabled()) {
+                            log.debug("Got ACK for task " + args[0] + " from " + session.getRemoteAddress());
+                        }
                         try {
                             queue.acknowledge((UUID) args[0]);
                         } finally {
@@ -272,7 +307,9 @@ public class SmartQServer<T extends Task> {
                     if (!clientTask.get(session.getRemoteAddress()).contains(args[0])) {
                         throw new Exception("Can not cancel task that was not first acquired: " + args[0] + " for " + session.getRemoteAddress());
                     } else {
-                        log.debug("Got NACK for task " + args[0] + " from " + session.getRemoteAddress());
+                        if (log.isDebugEnabled()) {
+                            log.debug("Got NACK for task " + args[0] + " from " + session.getRemoteAddress());
+                        }
                         try {
                             queue.cancel((UUID) args[0], (Boolean) args[1]);
                         } finally {
@@ -285,13 +322,18 @@ public class SmartQServer<T extends Task> {
                     if (!clientTask.get(session.getRemoteAddress()).contains(args[0])) {
                         throw new Exception("Error received for unacquired task: " + args[0] + " for " + session.getRemoteAddress());
                     } else {
-                        log.debug("Got ERROR for task " + args[0] + " from " + session.getRemoteAddress());
+                        if (log.isDebugEnabled()) {
+                            log.debug("Got ERROR for task " + args[0] + " from " + session.getRemoteAddress());
+                        }
                         try {
                             queue.failed((UUID) args[0]);
                         } finally {
                             endTask(session, (UUID)args[0]);
                         }
                     }
+                    break;
+                case PUBLISH:
+                    queue.submit((T) args[0]);
                     break;
 
             }
@@ -300,10 +342,12 @@ public class SmartQServer<T extends Task> {
         @Override
         public void sessionOpened(IoSession session) throws Exception {
             synchronized (clientTask) {
-                clientTask.put(session.getRemoteAddress(), Collections.synchronizedList(new ArrayList<UUID>()));
-                queue.setSubscribers(subscribers.incrementAndGet());
+                clientCount.incrementAndGet();
 
-                log.debug(String.format("Got new client on " + session.getRemoteAddress() + ". Subscribers: " + queue.getSubscribers()));
+                clientTask.put(session.getRemoteAddress(), Collections.synchronizedList(new ArrayList<UUID>()));
+                if (log.isDebugEnabled()) {
+                    log.debug("Got new client on " + session.getRemoteAddress() + ".");
+                }
             }
 
             synchronized (taskEmitter) {
@@ -315,17 +359,26 @@ public class SmartQServer<T extends Task> {
         public void sessionClosed(IoSession session) throws Exception {
 
             synchronized (clientTask) {
+                clientCount.decrementAndGet();
+
+                if (sessionReady.contains(session.getId())) {
+                    queue.setSubscribers(subscriberCount.decrementAndGet());
+                }
+
                 sessionReady.remove(session.getId());
 
                 for(UUID taskId : clientTask.get(session.getRemoteAddress())) {
                     queue.cancel(taskId, true);
-                    log.debug("Rescheduled task: " + taskId);
+                    if (log.isDebugEnabled()) {
+                        log.debug("Rescheduled task: " + taskId);
+                    }
                 }
 
                 clientTask.remove(session.getRemoteAddress());
-                queue.setSubscribers(subscribers.decrementAndGet());
 
-                log.debug(String.format("Client connection dropped " + session.getRemoteAddress() + ". Subscribers: " + queue.getSubscribers()));
+                if (log.isDebugEnabled()) {
+                    log.debug(String.format("Client connection dropped %s. Subscribers: ",session.getRemoteAddress(), queue.getSubscribers()));
+                }
 
             }
         }
@@ -349,7 +402,9 @@ public class SmartQServer<T extends Task> {
             }
 
             for(UUID id : staleIds) {
-                log.debug("Rescheduling stale task id: " + id);
+                if (log.isDebugEnabled()) {
+                    log.debug("Rescheduling stale task id: " + id);
+                }
                 try {
                     queue.cancel(id,true);
                     requestHandler.unregisterTask(id);
@@ -379,10 +434,15 @@ public class SmartQServer<T extends Task> {
                 if (sessionOffset >= managedSessions.size()) {
                     sessionOffset = 0;
                     synchronized (this) {
-                        log.debug("Waiting for new sessions to become available");
+                        if (log.isDebugEnabled()) {
+                            log.debug("Waiting for new sessions to become available");
+                        }
                         wait();
                     }
-                    log.debug("Got new sessions - restarting");
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Got new sessions - restarting");
+                    }
                     managedSessions = new LinkedList<IoSession>(acceptor.getManagedSessions().values());
                     continue;
                 }
