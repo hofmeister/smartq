@@ -360,9 +360,9 @@ public class ClientServerTest {
         assertEquals("Queue size is not affected", 1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        SmartQServer<Task> newProducer = new SmartQServer<Task>(proxy.getTarget(), queue);
+        SmartQServer<Task> newServer = new SmartQServer<Task>(proxy.getTarget(), queue);
 
-        newProducer.listen();
+        newServer.listen();
         proxy.reopen();
 
         Thread.sleep(1500);
@@ -375,7 +375,7 @@ public class ClientServerTest {
         assertEquals("Running task has been ack'ed when client reconnected",0, queue.runningCount());
 
         client.close();
-        newProducer.close();
+        newServer.close();
         proxy.close();
     }
 

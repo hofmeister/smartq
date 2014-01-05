@@ -16,7 +16,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.sql.SQLException;
 
-public class DemoPublisher {
+public class DemoServer {
     public static final InetSocketAddress ADDRESS = new InetSocketAddress("127.0.0.1",54321);
 
     private static TaskStore<Task> makeRedisStore() {

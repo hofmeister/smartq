@@ -9,16 +9,16 @@ import org.apache.log4j.PropertyConfigurator;
 
 import java.io.IOException;
 
-public class DemoSubscriber {
+public class DemoClient {
 
-    private static final Logger logger = Logger.getLogger(DemoSubscriber.class);
+    private static final Logger logger = Logger.getLogger(DemoClient.class);
 
     public static void main(String[] args) throws IOException, InterruptedException {
         PropertyConfigurator.configure("log4j.properties");
         int subscriberCount = 15;
 
         for(int i = 0 ; i < subscriberCount; i++) {
-            new SmartQClient<Task>(DemoPublisher.ADDRESS,new SmartQClientMessageHandler<Task>() {
+            new SmartQClient<Task>(DemoServer.ADDRESS,new SmartQClientMessageHandler<Task>() {
                 @Override
                 public void taskReceived(SmartQClient<Task> subscriber, Task task) throws Exception {
                     try {
