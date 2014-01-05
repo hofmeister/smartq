@@ -314,6 +314,10 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         client().connection.close();
     }
 
+    public void setDocumentSerializer(DocumentSerializer documentSerializer) {
+        this.documentSerializer = documentSerializer;
+    }
+
     private class PostgresClient {
         private final Connection connection;
         private final PGConnection pgconn;
