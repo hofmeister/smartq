@@ -1,4 +1,4 @@
-package com.vonhof.smartq.pubsub;
+package com.vonhof.smartq.server;
 
 
 import com.vonhof.smartq.DefaultTaskResult;
@@ -22,7 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-public class PubSubTest {
+public class ClientServerTest {
 
     protected synchronized InetSocketAddress generateAddress() {
         int port = 50000 + (int)Math.round(Math.random()*5000);
@@ -41,72 +41,72 @@ public class PubSubTest {
         return new SocketProxy(generateAddress(), generateAddress());
     }
 
-    protected synchronized SmartQPublisher<Task> makeProducer() {
-        return makeProducer(generateAddress());
+    protected synchronized SmartQServer<Task> makeServer() {
+        return makeServer(generateAddress());
     }
 
-    protected synchronized SmartQPublisher<Task> makeProducer(InetSocketAddress address) {
-        return new SmartQPublisher<Task>(address,makeQueue());
+    protected synchronized SmartQServer<Task> makeServer(InetSocketAddress address) {
+        return new SmartQServer<Task>(address,makeQueue());
     }
 
 
 
     @Test
     public void can_acquire_over_the_wire() throws IOException, InterruptedException {
-        final SmartQPublisher<Task> producer = makeProducer();
+        final SmartQServer<Task> server = makeServer();
 
-        final SmartQ<Task, ?> queue = producer.getQueue();
+        final SmartQ<Task, ?> queue = server.getQueue();
 
-        final HappySubscriberHandler subscriberHandler = new HappySubscriberHandler();
-        final SmartQSubscriber<Task> subscriber = producer.makeSubscriber(subscriberHandler);
+        final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
+        final SmartQClient<Task> client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
 
         queue.submit(task);
 
-        producer.listen();
+        server.listen();
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        subscriber.connect();
+        client.connect();
 
         Thread.sleep(100);
 
-        assertEquals(1, producer.getSubscriberCount());
+        assertEquals(1, server.getClientCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
-        synchronized (subscriberHandler) {
-            if (!subscriberHandler.done) {
-                subscriberHandler.wait(1000);
+        synchronized (msgHandler) {
+            if (!msgHandler.done) {
+                msgHandler.wait(1000);
             }
         }
 
-        assertTrue(subscriberHandler.done);
+        assertTrue(msgHandler.done);
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
-        subscriber.acknowledge(task.getId());
+        client.acknowledge(task.getId());
 
         Thread.sleep(100);
 
         assertEquals(0, queue.size());
 
-        subscriber.close();
-        producer.close();
+        client.close();
+        server.close();
 
     }
 
     @Test
     public void can_cancel_over_the_wire() throws IOException, InterruptedException {
-        final SmartQPublisher<Task> producer = makeProducer();
+        final SmartQServer<Task> server = makeServer();
 
-        final SmartQ<Task, ?> queue = producer.getQueue();
+        final SmartQ<Task, ?> queue = server.getQueue();
 
-        final HappySubscriberHandler subscriberHandler = new HappySubscriberHandler();
-        final SmartQSubscriber<Task> subscriber = producer.makeSubscriber(subscriberHandler);
+        final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
+        final SmartQClient<Task> client = server.makeClient(msgHandler);
 
         final Task task1 = new Task("test").withId(UUID.randomUUID());
         final Task task2 = new Task("test").withId(UUID.randomUUID());
@@ -114,35 +114,35 @@ public class PubSubTest {
         queue.submit(task1);
         queue.submit(task2);
 
-        producer.listen();
+        server.listen();
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
         assertEquals(2, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        subscriber.connect();
+        client.connect();
 
         Thread.sleep(100);
 
-        assertEquals("We have 1 subscriber", 1, producer.getSubscriberCount());
+        assertEquals("We have 1 client", 1, server.getClientCount());
 
         assertEquals(1, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
 
-        synchronized (subscriberHandler) {
-            if (!subscriberHandler.done) {
-                subscriberHandler.wait(1000);
+        synchronized (msgHandler) {
+            if (!msgHandler.done) {
+                msgHandler.wait(1000);
             }
         }
 
-        assertTrue("Subscriber handler was executed successfully", subscriberHandler.done);
+        assertTrue("Subscriber handler was executed successfully", msgHandler.done);
         assertEquals("We have 1 task in queue",1, queue.queueSize());
         assertEquals("We have 1 running task", 1, queue.runningCount());
 
         //Cancel the task without rescheduling it
-        subscriberHandler.done = false;
-        subscriber.cancel(subscriberHandler.task.getId(), false);
+        msgHandler.done = false;
+        client.cancel(msgHandler.task.getId(), false);
 
         Thread.sleep(100);
 
@@ -150,100 +150,100 @@ public class PubSubTest {
 
         //Grab the next task
 
-        synchronized (subscriberHandler) {
-            if (!subscriberHandler.done) {
-                subscriberHandler.wait(1000);
+        synchronized (msgHandler) {
+            if (!msgHandler.done) {
+                msgHandler.wait(1000);
             }
         }
 
-        assertTrue(subscriberHandler.done);
+        assertTrue(msgHandler.done);
         assertEquals("All tasks have been acquired",0, queue.queueSize());
         assertEquals("We have a running task",1, queue.runningCount());
 
         //Cancel the task and reschedule
-        subscriber.cancel(subscriberHandler.task.getId(), true);
+        client.cancel(msgHandler.task.getId(), true);
 
         Thread.sleep(100);
 
         assertEquals("Queue should still have 1 since we rescheduled",1, queue.size());
 
-        subscriber.close();
-        producer.close();
+        client.close();
+        server.close();
     }
 
 
     @Test
     public void client_disconnect_causes_auto_retry() throws IOException, InterruptedException {
-        final SmartQPublisher<Task> producer = makeProducer();
+        final SmartQServer<Task> server = makeServer();
 
-        final SmartQ<Task, ?> queue = producer.getQueue();
+        final SmartQ<Task, ?> queue = server.getQueue();
 
-        final HappySubscriberHandler subscriberHandler = new HappySubscriberHandler();
-        final SmartQSubscriber<Task> subscriber = producer.makeSubscriber(subscriberHandler);
+        final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
+        final SmartQClient<Task> client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
 
         queue.submit(task);
 
-        producer.listen();
+        server.listen();
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        subscriber.connect();
+        client.connect();
 
         Thread.sleep(100);
 
-        assertEquals(1, producer.getSubscriberCount());
+        assertEquals(1, server.getClientCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
-        synchronized (subscriberHandler) {
-            subscriberHandler.wait(1000);
+        synchronized (msgHandler) {
+            msgHandler.wait(1000);
         }
 
-        assertTrue(subscriberHandler.done);
+        assertTrue(msgHandler.done);
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
-        subscriber.close();
+        client.close();
 
         Thread.sleep(500);
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
 
         assertEquals(0, queue.runningCount());
 
         assertEquals("Subscriber went away, the task has been rescheduled", 1, queue.size());
 
-        producer.close();
+        server.close();
     }
 
     @Test
     public void client_unhandled_exception_causes_auto_cancel() throws IOException, InterruptedException {
-        final SmartQPublisher<Task> producer = makeProducer();
+        final SmartQServer<Task> server = makeServer();
 
-        final SmartQ<Task, ?> queue = producer.getQueue();
+        final SmartQ<Task, ?> queue = server.getQueue();
 
-        final ExceptionSubscriberHandler subscriberHandler = new ExceptionSubscriberHandler();
-        final SmartQSubscriber<Task> subscriber = producer.makeSubscriber(subscriberHandler);
+        final ExceptionClientMessageHandler msgHandler = new ExceptionClientMessageHandler();
+        final SmartQClient<Task> client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
 
         queue.submit(task);
 
-        producer.listen();
+        server.listen();
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        subscriber.connect();
+        client.connect();
 
         Thread.sleep(100);
 
-        assertEquals(1, producer.getSubscriberCount());
+        assertEquals(1, server.getClientCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
@@ -253,18 +253,18 @@ public class PubSubTest {
         assertEquals("The task was not auto-rescheduled", 0, queue.queueSize());
         assertEquals("The task is no longer running", 0, queue.runningCount());
 
-        subscriber.close();
-        producer.close();
+        client.close();
+        server.close();
     }
 
     @Test
     public void client_unhandled_exception_causes_retry_if_allowed() throws IOException, InterruptedException {
-        final SmartQPublisher<Task> producer = makeProducer();
+        final SmartQServer<Task> server = makeServer();
 
-        final SmartQ<Task, ?> queue = producer.getQueue();
+        final SmartQ<Task, ?> queue = server.getQueue();
 
-        final ControllableExceptionSubscriberHandler subscriberHandler = new ControllableExceptionSubscriberHandler();
-        final SmartQSubscriber<Task> subscriber = producer.makeSubscriber(subscriberHandler);
+        final ControllableExceptionClientMessageHandler msgHandler = new ControllableExceptionClientMessageHandler();
+        final SmartQClient<Task> client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
         queue.setMaxRetries("test", 2);
@@ -273,23 +273,23 @@ public class PubSubTest {
 
         queue.submit(task);
 
-        producer.listen();
+        server.listen();
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        subscriber.connect();
+        client.connect();
 
         Thread.sleep(100);
 
-        assertEquals(1, producer.getSubscriberCount());
+        assertEquals(1, server.getClientCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
-        subscriberHandler.wakeUp();
+        msgHandler.wakeUp();
         Thread.sleep(100);
-        subscriberHandler.setThrowing(false);
+        msgHandler.setThrowing(false);
         Thread.sleep(200);
 
 
@@ -299,12 +299,12 @@ public class PubSubTest {
         assertEquals("Task has 1 attempt", 1, refreshedTask.getAttempts());
         assertEquals("The task is running again", 1, queue.runningCount());
 
-        subscriberHandler.wakeUp();
+        msgHandler.wakeUp();
         Thread.sleep(100);
 
 
-        assertTrue("The task is done", subscriberHandler.isDone());
-        subscriber.acknowledge(task.getId());
+        assertTrue("The task is done", msgHandler.isDone());
+        client.acknowledge(task.getId());
         Thread.sleep(100);
 
         assertNull("The task is removed from the store", queue.getStore().get(task.getId()));
@@ -312,84 +312,84 @@ public class PubSubTest {
         assertEquals("The task is no longer running", 0, queue.runningCount());
 
 
-        subscriber.close();
-        producer.close();
+        client.close();
+        server.close();
     }
 
     @Test
      public void when_server_goes_away_it_moves_running_to_queued_when_restarted() throws Exception {
         final SocketProxy proxy = makeProxy();
-        final SmartQPublisher<Task> producer = makeProducer(proxy.getTarget());
+        final SmartQServer<Task> server = makeServer(proxy.getTarget());
 
-        final SmartQ<Task, ?> queue = producer.getQueue();
+        final SmartQ<Task, ?> queue = server.getQueue();
 
-        final HappySubscriberHandler subscriberHandler = new HappySubscriberHandler();
-        final SmartQSubscriber<Task> subscriber = new SmartQSubscriber<Task>(proxy.getAddress(), subscriberHandler);
+        final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
+        final SmartQClient<Task> client = new SmartQClient<Task>(proxy.getAddress(), msgHandler);
 
-        subscriber.setRetryTimeout(100);
+        client.setRetryTimeout(100);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
 
         queue.submit(task);
 
-        producer.listen();
+        server.listen();
 
         Thread.sleep(100);
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
         assertEquals(1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        subscriber.connect();
+        client.connect();
 
         Thread.sleep(100);
 
-        assertEquals(1, producer.getSubscriberCount());
+        assertEquals(1, server.getClientCount());
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
         proxy.close();
-        producer.close();
+        server.close();
 
         Thread.sleep(500);
 
-        assertEquals("Clients was disconnected", 0, producer.getSubscriberCount());
+        assertEquals("Clients was disconnected", 0, server.getClientCount());
 
-        subscriber.acknowledge(task.getId()); //Client acks when offline
+        client.acknowledge(task.getId()); //Client acks when offline
 
-        assertEquals("Queue size is not affected",1, queue.queueSize());
+        assertEquals("Queue size is not affected", 1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        SmartQPublisher<Task> newProducer = new SmartQPublisher<Task>(proxy.getTarget(), queue);
+        SmartQServer<Task> newProducer = new SmartQServer<Task>(proxy.getTarget(), queue);
 
         newProducer.listen();
         proxy.reopen();
 
         Thread.sleep(1500);
 
-        assertEquals("Client auto reconnects", 1, producer.getSubscriberCount());
+        assertEquals("Client auto reconnects", 1, server.getClientCount());
 
         Thread.sleep(200);
 
         assertEquals(0, queue.queueSize());
         assertEquals("Running task has been ack'ed when client reconnected",0, queue.runningCount());
 
-        subscriber.close();
+        client.close();
         newProducer.close();
         proxy.close();
     }
 
 
     @Test
-    public void multiple_subscribers_are_supported() throws Exception {
-        final SmartQPublisher<Task> producer = makeProducer();
+    public void multiple_clients_are_supported() throws Exception {
+        final SmartQServer<Task> server = makeServer();
 
-        final SmartQ<Task, ?> queue = producer.getQueue();
+        final SmartQ<Task, ?> queue = server.getQueue();
 
-        final MultiSubscriberHandler subscriberHandler = new MultiSubscriberHandler();
-        final SmartQSubscriber<Task> subscriber1 = producer.makeSubscriber(subscriberHandler);
-        final SmartQSubscriber<Task> subscriber2 = producer.makeSubscriber(subscriberHandler);
-        final SmartQSubscriber<Task> subscriber3 = producer.makeSubscriber(subscriberHandler);
+        final MultiClientMessageHandler msgHandler = new MultiClientMessageHandler();
+        final SmartQClient<Task> client1 = server.makeClient(msgHandler);
+        final SmartQClient<Task> client2 = server.makeClient(msgHandler);
+        final SmartQClient<Task> client3 = server.makeClient(msgHandler);
 
 
         final Task task1 = new Task("test").withId(UUID.randomUUID());
@@ -398,25 +398,25 @@ public class PubSubTest {
 
         queue.submit(task1);
 
-        producer.listen();
+        server.listen();
 
         Thread.sleep(100);
 
-        assertEquals(0, producer.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
 
-        subscriber1.connect();
-        subscriber2.connect();
-        subscriber3.connect();
-
-        Thread.sleep(100);
-
-        assertEquals(3, producer.getSubscriberCount());
+        client1.connect();
+        client2.connect();
+        client3.connect();
 
         Thread.sleep(100);
 
-        assertTrue(subscriberHandler.taskIds.contains(task1.getId()));
+        assertEquals(3, server.getClientCount());
 
-        subscriberHandler.subscriberMap.get(task1.getId()).acknowledge(task1.getId());
+        Thread.sleep(100);
+
+        assertTrue(msgHandler.taskIds.contains(task1.getId()));
+
+        msgHandler.clientMap.get(task1.getId()).acknowledge(task1.getId());
 
         queue.submit(task2);
         queue.submit(task3);
@@ -426,23 +426,23 @@ public class PubSubTest {
         assertEquals(0, queue.queueSize());
         assertEquals(2, queue.runningCount());
 
-        subscriber1.close();
-        subscriber2.close();
-        subscriber3.close();
-        producer.close();
+        client1.close();
+        client2.close();
+        client3.close();
+        server.close();
     }
 
 
-    public static class MultiSubscriberHandler implements SmartQSubscriberHandler<Task> {
+    public static class MultiClientMessageHandler implements SmartQClientMessageHandler<Task> {
 
         private int done = 0;
         private List<UUID> taskIds = new ArrayList<UUID>();
-        private Map<UUID,SmartQSubscriber<Task>> subscriberMap = new HashMap<UUID, SmartQSubscriber<Task>>();
+        private Map<UUID,SmartQClient<Task>> clientMap = new HashMap<UUID, SmartQClient<Task>>();
 
         @Override
-        public void taskReceived(SmartQSubscriber<Task> subscriber, Task task) {
+        public void taskReceived(SmartQClient<Task> client, Task task) {
             try {
-                subscriberMap.put(task.getId(), subscriber);
+                clientMap.put(task.getId(), client);
                 taskIds.add(task.getId());
                 Thread.sleep(100); //Do some work
                 done++;
@@ -456,14 +456,14 @@ public class PubSubTest {
         }
     }
 
-    public static class HappySubscriberHandler implements SmartQSubscriberHandler<Task> {
+    public static class HappyClientMessageHandler implements SmartQClientMessageHandler<Task> {
 
         private boolean done = false;
         private boolean failed = false;
         private Task task;
 
         @Override
-        public void taskReceived(SmartQSubscriber<Task> subscriber, Task task) {
+        public void taskReceived(SmartQClient<Task> client, Task task) {
             try {
                 this.task = task;
                 Thread.sleep(100); //Do some work
@@ -482,19 +482,19 @@ public class PubSubTest {
         }
     }
 
-    public static class ExceptionSubscriberHandler implements SmartQSubscriberHandler<Task> {
+    public static class ExceptionClientMessageHandler implements SmartQClientMessageHandler<Task> {
 
         private Task task;
 
         @Override
-        public void taskReceived(SmartQSubscriber<Task> subscriber, Task task) throws Exception {
+        public void taskReceived(SmartQClient<Task> client, Task task) throws Exception {
             this.task = task;
             Thread.sleep(100); //Do some work
             throw new Exception("Something went wrong");
         }
     }
 
-    public static class ControllableExceptionSubscriberHandler implements SmartQSubscriberHandler<Task> {
+    public static class ControllableExceptionClientMessageHandler implements SmartQClientMessageHandler<Task> {
 
         private Task task;
 
@@ -518,17 +518,14 @@ public class PubSubTest {
         }
 
         @Override
-        public void taskReceived(SmartQSubscriber<Task> subscriber, Task task) throws Exception {
+        public void taskReceived(SmartQClient<Task> client, Task task) throws Exception {
             this.task = task;
-            System.out.println("Waiting");
             synchronized (this) {
                 wait();
             }
-            System.out.println("Woke up");
             if (throwing) {
                 throw new Exception("Something went wrong");
             }
-            System.out.println("done");
             done = true;
         }
     }

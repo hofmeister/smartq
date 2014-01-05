@@ -1,4 +1,4 @@
-package com.vonhof.smartq.pubsub;
+package com.vonhof.smartq.server;
 
 
 import com.vonhof.smartq.AcquireInterruptedException;
@@ -31,9 +31,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class SmartQPublisher<T extends Task> {
+public class SmartQServer<T extends Task> {
 
-    private static final Logger log = Logger.getLogger(SmartQPublisher.class);
+    private static final Logger log = Logger.getLogger(SmartQServer.class);
 
     private final InetSocketAddress address;
     private final SmartQ<T,?> queue;
@@ -45,13 +45,13 @@ public class SmartQPublisher<T extends Task> {
     private final Timer timer = new Timer();
 
 
-    public SmartQPublisher(InetSocketAddress address, SmartQ queue) {
+    public SmartQServer(InetSocketAddress address, SmartQ queue) {
         this.address = address;
         this.queue = queue;
 
     }
 
-    public int getSubscriberCount() {
+    public int getClientCount() {
         return queue.getSubscribers();
     }
 
@@ -63,8 +63,8 @@ public class SmartQPublisher<T extends Task> {
         return queue;
     }
 
-    public SmartQSubscriber<T> makeSubscriber(SmartQSubscriberHandler<T> handler) {
-        return new SmartQSubscriber<T>(address, handler);
+    public SmartQClient<T> makeClient(SmartQClientMessageHandler<T> handler) {
+        return new SmartQClient<T>(address, handler);
     }
 
     public synchronized void listen() throws IOException {

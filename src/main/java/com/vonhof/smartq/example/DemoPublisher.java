@@ -7,7 +7,7 @@ import com.vonhof.smartq.RedisTaskStore;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.TaskStore;
-import com.vonhof.smartq.pubsub.SmartQPublisher;
+import com.vonhof.smartq.server.SmartQServer;
 import org.apache.log4j.PropertyConfigurator;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
@@ -46,7 +46,7 @@ public class DemoPublisher {
 
         //queue.requeueAll(); //If any was left as running - move them back to queue.
 
-        final SmartQPublisher<Task> publisher = new SmartQPublisher<Task>(ADDRESS, queue);
+        final SmartQServer<Task> publisher = new SmartQServer<Task>(ADDRESS, queue);
 
         publisher.listen();
 

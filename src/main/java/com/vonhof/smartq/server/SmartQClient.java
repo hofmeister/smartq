@@ -1,8 +1,8 @@
-package com.vonhof.smartq.pubsub;
+package com.vonhof.smartq.server;
 
 
 import com.vonhof.smartq.Task;
-import com.vonhof.smartq.pubsub.Command.Type;
+import com.vonhof.smartq.server.Command.Type;
 import org.apache.log4j.Logger;
 import org.apache.mina.core.RuntimeIoException;
 import org.apache.mina.core.future.ConnectFuture;
@@ -27,9 +27,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-public class SmartQSubscriber<T extends Task> {
+public class SmartQClient<T extends Task> {
 
-    private static final Logger log = Logger.getLogger(SmartQSubscriber.class);
+    private static final Logger log = Logger.getLogger(SmartQClient.class);
 
     private IoSession session = null;
     private NioSocketConnector connector = null;
@@ -42,7 +42,7 @@ public class SmartQSubscriber<T extends Task> {
     private int connectionTimeout = 30000;
     private int retryTimeout = 5000;
 
-    private final SmartQSubscriberHandler<T> responseHandler;
+    private final SmartQClientMessageHandler<T> responseHandler;
 
     private final Map<UUID, T> activeTasks = new ConcurrentHashMap<UUID, T>();
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
@@ -52,7 +52,7 @@ public class SmartQSubscriber<T extends Task> {
     private final UUID id;
 
 
-    public SmartQSubscriber(InetSocketAddress hostAddress, SmartQSubscriberHandler<T> responseHandler) {
+    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler<T> responseHandler) {
         id = UUID.randomUUID();
         this.hostAddress = hostAddress;
         this.responseHandler = responseHandler;
@@ -151,7 +151,7 @@ public class SmartQSubscriber<T extends Task> {
                     return;
                 }
 
-                log.warn("Was unexpectedly disconnected from  " + hostAddress+". Will try to reconnect. " + SmartQSubscriber.this);
+                log.warn("Was unexpectedly disconnected from  " + hostAddress+". Will try to reconnect. " + SmartQClient.this);
 
                 while(true) {
                     try {
@@ -288,7 +288,7 @@ public class SmartQSubscriber<T extends Task> {
             if (cause instanceof IOException) {
                 reconnectLater();
             } else {
-                log.error("Got exception while processing request on " + SmartQSubscriber.this, cause);
+                log.error("Got exception while processing request on " + SmartQClient.this, cause);
             }
         }
         @Override
@@ -304,17 +304,17 @@ public class SmartQSubscriber<T extends Task> {
             if (message instanceof Task) {
                 final T task = (T) message;
 
-                log.debug("Processing task: " + task.getId() + " on " + SmartQSubscriber.this);
+                log.debug("Processing task: " + task.getId() + " on " + SmartQClient.this);
                 activeTasks.put(task.getId(),task);
 
                 executor.execute(new Runnable() {
                     @Override
                     public void run() {
                         try {
-                            responseHandler.taskReceived(SmartQSubscriber.this, task);
-                            log.debug("Task processed: " + task.getId() + " on " + SmartQSubscriber.this);
+                            responseHandler.taskReceived(SmartQClient.this, task);
+                            log.debug("Task processed: " + task.getId() + " on " + SmartQClient.this);
                         } catch (Exception ex) {
-                            log.error("Failed to process task:" + task.getId() + " on " + SmartQSubscriber.this, ex);
+                            log.error("Failed to process task:" + task.getId() + " on " + SmartQClient.this, ex);
                             try {
                                 failed(task.getId());
                             } catch (InterruptedException e) {}
