@@ -3,16 +3,14 @@ package com.vonhof.smartq.server;
 
 import com.vonhof.smartq.Task;
 
-import java.io.Serializable;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.UUID;
 
-public class Command implements Serializable {
+public class Command {
     private final Type type;
     private final Object[] args;
 
-    public Command(Type type,Object ... args) {
+    public Command(Type type, Object ... args) {
         this.type = type;
         this.args = args;
 
@@ -49,7 +47,7 @@ public class Command implements Serializable {
         SUBSCRIBE(Integer.class),
         ACK(UUID.class),
         NACK(UUID.class, Boolean.class),
-        RECOVER(Collection.class),
+        RECOVER(UUIDList.class),
         ERROR(UUID.class),
         PUBLISH(Task.class);
 

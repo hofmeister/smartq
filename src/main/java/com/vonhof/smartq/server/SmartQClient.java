@@ -2,6 +2,7 @@ package com.vonhof.smartq.server;
 
 
 import com.vonhof.smartq.Task;
+import com.vonhof.smartq.mina.JacksonCodecFactory;
 import com.vonhof.smartq.server.Command.Type;
 import org.apache.log4j.Logger;
 import org.apache.mina.core.RuntimeIoException;
@@ -11,12 +12,10 @@ import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFactory;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
-import org.apache.mina.filter.codec.serialization.ObjectSerializationCodecFactory;
 import org.apache.mina.transport.socket.nio.NioSocketConnector;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -54,7 +53,7 @@ public class SmartQClient<T extends Task> {
 
     private final UUID id;
 
-    private ProtocolCodecFactory protocolCodecFactory = new ObjectSerializationCodecFactory();
+    private ProtocolCodecFactory protocolCodecFactory = new JacksonCodecFactory();
 
 
     /**
@@ -249,11 +248,12 @@ public class SmartQClient<T extends Task> {
                 log.debug("Sending recover request to newly opened host: " + activeTasks.size());
             }
 
-            if (!send(new Command(Type.RECOVER, new ArrayList<UUID>(activeTasks.keySet())))) {
+            if (!send(new Command(Type.RECOVER, new UUIDList(activeTasks.keySet())))) {
                 throw new RuntimeException("Timed out while waiting for recover");
             }
             activeTasks.clear();
         }
+
         if (!queuedMessages.isEmpty()) {
             List<Command> cmds = new LinkedList<Command>(queuedMessages);
 
@@ -313,6 +313,9 @@ public class SmartQClient<T extends Task> {
 
     private boolean send(Command message) throws InterruptedException {
         if (checkSession()) {
+            if (log.isTraceEnabled()) {
+                log.trace("Command was written: " + message);
+            }
             session.write(message);
             return true;
         } else if (!message.getType().equals(Type.RECOVER)) {
@@ -365,6 +368,9 @@ public class SmartQClient<T extends Task> {
 
         @Override
         public void messageReceived(IoSession session, Object message) throws Exception {
+            if (log.isTraceEnabled()) {
+                log.trace("Message received: " + message);
+            }
             if (message instanceof Task) {
                 final T task = (T) message;
 

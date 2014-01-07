@@ -3,7 +3,6 @@ package com.vonhof.smartq;
 import com.vonhof.smartq.Task.State;
 import org.apache.log4j.Logger;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -13,7 +12,7 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class SmartQ<T extends Task,U extends Serializable>  {
+public class SmartQ<T extends Task,U>  {
 
     private static final Logger log = Logger.getLogger(SmartQ.class);
 

@@ -2,10 +2,9 @@ package com.vonhof.smartq;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
 
-import java.io.Serializable;
 import java.util.UUID;
 
-public class Task<T extends Serializable> implements Serializable {
+public class Task<T> {
 
     private UUID id;
     private String type;

@@ -4,13 +4,13 @@ package com.vonhof.smartq.server;
 import com.vonhof.smartq.AcquireInterruptedException;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
+import com.vonhof.smartq.mina.JacksonCodecFactory;
 import org.apache.log4j.Logger;
 import org.apache.mina.core.service.IoHandlerAdapter;
 import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFactory;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
-import org.apache.mina.filter.codec.serialization.ObjectSerializationCodecFactory;
 import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
 import org.apache.mina.util.ConcurrentHashSet;
 
@@ -46,7 +46,7 @@ public class SmartQServer<T extends Task> {
     private final RequestHandler requestHandler = new RequestHandler();
     private TaskEmitter taskEmitter;
     private final Timer timer = new Timer();
-    private ProtocolCodecFactory protocolCodecFactory = new ObjectSerializationCodecFactory();
+    private ProtocolCodecFactory protocolCodecFactory = new JacksonCodecFactory();
 
 
 
@@ -92,7 +92,6 @@ public class SmartQServer<T extends Task> {
         acceptor.getFilterChain().addLast( "codec", new ProtocolCodecFilter( protocolCodecFactory ));
 
         acceptor.setHandler( requestHandler );
-
 
         acceptor.getSessionConfig().setReadBufferSize( 2048 );
         acceptor.getSessionConfig().setIdleTime( IdleStatus.BOTH_IDLE, 10 );
@@ -150,6 +149,9 @@ public class SmartQServer<T extends Task> {
 
         @Override
         public void messageReceived(IoSession session, Object message) throws Exception {
+            if (log.isTraceEnabled()) {
+                log.trace("Received message: " + message);
+            }
             if (message instanceof Command) {
                 handleCommand(session, (Command) message);
                 return;
@@ -282,6 +284,10 @@ public class SmartQServer<T extends Task> {
 
                     break;
                 case SUBSCRIBE:
+                    if (log.isTraceEnabled()) {
+                        log.trace("Client subscribing: " + session.getId());
+                    }
+
                     if (!sessionReady.contains(session.getId())) {
                         if (args.length > 0 && args[0] instanceof Integer) {
                             clientTaskLimit.put(session.getRemoteAddress(), (Integer) args[0]);
@@ -295,7 +301,11 @@ public class SmartQServer<T extends Task> {
                         queue.setSubscribers(subscriberCount.incrementAndGet());
 
                         if (log.isDebugEnabled()) {
-                            log.debug(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: ",session.getRemoteAddress(), getTaskLimit(session), queue.getSubscribers()));
+                            log.debug(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: %s",session.getRemoteAddress(), getTaskLimit(session), queue.getSubscribers()));
+                        }
+                    } else {
+                        if (log.isTraceEnabled()) {
+                            log.trace("Session already found: " + session.getId());
                         }
                     }
                     break;
@@ -455,7 +465,7 @@ public class SmartQServer<T extends Task> {
                     }
 
                     if (log.isDebugEnabled()) {
-                        log.debug("Got new sessions - restarting");
+                        log.debug("Got new sessions - refreshing session list");
                     }
                     managedSessions = new LinkedList<IoSession>(acceptor.getManagedSessions().values());
                     continue;

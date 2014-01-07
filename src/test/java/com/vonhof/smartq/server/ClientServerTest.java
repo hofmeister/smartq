@@ -365,9 +365,10 @@ public class ClientServerTest {
         newServer.listen();
         proxy.reopen();
 
-        Thread.sleep(1500);
+        Thread.sleep(500);
 
-        assertEquals("Client auto reconnects", 1, server.getSubscriberCount());
+        assertEquals("Client auto reconnects", 1, newServer.getClientCount());
+        assertEquals("Client auto reconnects", 1, newServer.getSubscriberCount());
 
         Thread.sleep(200);
 
