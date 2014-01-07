@@ -7,7 +7,6 @@ import com.vonhof.smartq.Task;
 import com.vonhof.smartq.mina.JacksonCodecFactory;
 import org.apache.log4j.Logger;
 import org.apache.mina.core.service.IoHandlerAdapter;
-import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.codec.ProtocolCodecFactory;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
@@ -93,8 +92,8 @@ public class SmartQServer<T extends Task> {
 
         acceptor.setHandler( requestHandler );
 
-        acceptor.getSessionConfig().setReadBufferSize( 2048 );
-        acceptor.getSessionConfig().setIdleTime( IdleStatus.BOTH_IDLE, 10 );
+        acceptor.getSessionConfig().setReadBufferSize( 1024 );
+
         acceptor.setCloseOnDeactivation(true);
         acceptor.bind( address );
 

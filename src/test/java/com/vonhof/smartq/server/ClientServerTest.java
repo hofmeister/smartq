@@ -492,6 +492,48 @@ public class ClientServerTest {
         server.close();
     }
 
+    @Test
+    public void large_tasks_are_supported() throws Exception {
+        final SmartQServer<Task> server = makeServer();
+
+        final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
+
+        final SmartQClient<Task> clientPublisher = server.makeClient();
+        final SmartQClient<Task> clientSubscriber = server.makeClient(msgHandler);
+
+        final Task task1 = new Task("test").withId(UUID.randomUUID());
+        task1.setData(new byte[25000]);
+
+        server.listen();
+
+        Thread.sleep(100);
+
+        assertEquals(0, server.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
+
+        clientPublisher.connect();
+
+        Thread.sleep(100);
+
+        clientPublisher.publish(task1);
+
+        Thread.sleep(100);
+
+        assertEquals(1, server.getQueue().queueSize());
+
+        clientSubscriber.connect();
+
+        Thread.sleep(200);
+
+        assertTrue(msgHandler.done);
+
+        clientSubscriber.acknowledge(task1.getId());
+
+        clientPublisher.close();
+        clientSubscriber.close();
+        server.close();
+    }
+
 
     public static class MultiClientMessageHandler implements SmartQClientMessageHandler<Task> {
 
