@@ -9,6 +9,7 @@ import org.apache.mina.core.future.ConnectFuture;
 import org.apache.mina.core.service.IoHandler;
 import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolCodecFactory;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
 import org.apache.mina.filter.codec.serialization.ObjectSerializationCodecFactory;
 import org.apache.mina.transport.socket.nio.NioSocketConnector;
@@ -52,6 +53,8 @@ public class SmartQClient<T extends Task> {
     private Timer timer;
 
     private final UUID id;
+
+    private ProtocolCodecFactory protocolCodecFactory = new ObjectSerializationCodecFactory();
 
 
     /**
@@ -105,6 +108,10 @@ public class SmartQClient<T extends Task> {
         this.connectionTimeout = connectionTimeout;
     }
 
+    public void setProtocolCodecFactory(ProtocolCodecFactory protocolCodecFactory) {
+        this.protocolCodecFactory = protocolCodecFactory;
+    }
+
     public void connect() throws IOException, InterruptedException {
         if (connector != null) {
             throw new RuntimeException("Client already connected. Close connection before reconnecting");
@@ -112,7 +119,7 @@ public class SmartQClient<T extends Task> {
 
         timer = new Timer();
         connector = new NioSocketConnector();
-        connector.getFilterChain().addLast("codec", new ProtocolCodecFilter(new ObjectSerializationCodecFactory()));
+        connector.getFilterChain().addLast("codec", new ProtocolCodecFilter(protocolCodecFactory));
 
         connector.setHandler(new ClientSessionHandler());
 

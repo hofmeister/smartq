@@ -8,6 +8,7 @@ import org.apache.log4j.Logger;
 import org.apache.mina.core.service.IoHandlerAdapter;
 import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolCodecFactory;
 import org.apache.mina.filter.codec.ProtocolCodecFilter;
 import org.apache.mina.filter.codec.serialization.ObjectSerializationCodecFactory;
 import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
@@ -45,6 +46,7 @@ public class SmartQServer<T extends Task> {
     private final RequestHandler requestHandler = new RequestHandler();
     private TaskEmitter taskEmitter;
     private final Timer timer = new Timer();
+    private ProtocolCodecFactory protocolCodecFactory = new ObjectSerializationCodecFactory();
 
 
 
@@ -52,6 +54,10 @@ public class SmartQServer<T extends Task> {
         this.address = address;
         this.queue = queue;
 
+    }
+
+    public void setProtocolCodecFactory(ProtocolCodecFactory protocolCodecFactory) {
+        this.protocolCodecFactory = protocolCodecFactory;
     }
 
     public int getSubscriberCount() {
@@ -83,11 +89,7 @@ public class SmartQServer<T extends Task> {
         acceptor = new NioSocketAcceptor();
         acceptor.setReuseAddress(true);
 
-        ObjectSerializationCodecFactory codecFactory = new ObjectSerializationCodecFactory();
-        codecFactory.setDecoderMaxObjectSize(Integer.MAX_VALUE);
-        codecFactory.setEncoderMaxObjectSize(Integer.MAX_VALUE);
-
-        acceptor.getFilterChain().addLast( "codec", new ProtocolCodecFilter( codecFactory ));
+        acceptor.getFilterChain().addLast( "codec", new ProtocolCodecFilter( protocolCodecFactory ));
 
         acceptor.setHandler( requestHandler );
 
