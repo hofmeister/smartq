@@ -65,11 +65,13 @@ public class JacksonCodecFactory implements ProtocolCodecFactory {
             node.put(CLASS_FIELD,message.getClass().getName());
 
             String json = om.writeValueAsString(node);
+            byte[] jsonBytes = json.getBytes("UTF-8");
 
-            IoBuffer buf = IoBuffer.allocate(json.length()).setAutoExpand(true);
 
-            buf.putInt(json.length());
-            buf.putString(json, encoder);
+            IoBuffer buf = IoBuffer.allocate(jsonBytes.length).setAutoExpand(true);
+
+            buf.putInt(jsonBytes.length);
+            buf.put(jsonBytes);
             buf.flip();
 
             out.write(buf);
@@ -94,8 +96,19 @@ public class JacksonCodecFactory implements ProtocolCodecFactory {
 
         @Override
         public void decode(IoSession session, IoBuffer in, ProtocolDecoderOutput out) throws Exception {
-            int stringLength = in.getInt();
-            String json = in.getString(stringLength, decoder);
+            int byteSize = in.getInt();
+            byte[] jsonBytes = new byte[byteSize];
+
+            int ix = 0;
+            while(in.hasRemaining()) {
+                jsonBytes[ix] = in.get();
+                ix++;
+                if (ix >= jsonBytes.length) {
+                    break;
+                }
+            }
+
+            String json = new String(jsonBytes, "UTF-8");
 
             ObjectNode node = (ObjectNode) om.readTree(json);
             String className = node.get(CLASS_FIELD).getTextValue();
