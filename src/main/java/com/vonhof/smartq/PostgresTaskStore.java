@@ -254,8 +254,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     @Override
     public synchronized <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
+        boolean isolationStartedInThisCall = false;
         try {
-            boolean isolationStartedInThisCall = false;
             if (!isolated) {
                 client().connection.setAutoCommit(false);
                 client().lockTable();
@@ -268,14 +268,18 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             }
             return result;
         } catch (Exception e) {
-            try {
-                client().connection.rollback();
-            } catch (SQLException e1) {}
+            if (isolationStartedInThisCall) {
+                try {
+                    client().connection.rollback();
+                } catch (SQLException e1) {}
+            }
             throw new RuntimeException(e);
         } finally {
-            try {
-                client().connection.setAutoCommit(true);
-            } catch (SQLException e) {}
+            if (isolationStartedInThisCall) {
+                try {
+                    client().connection.setAutoCommit(true);
+                } catch (SQLException e) {}
+            }
         }
     }
 

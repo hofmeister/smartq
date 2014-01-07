@@ -380,7 +380,7 @@ public class SmartQ<T extends Task,U extends Serializable>  {
                     });
 
                 } catch (Exception e) {
-                    log.error(e);
+                    log.error("Failed while trying to get selected task", e);
                 }
 
 
