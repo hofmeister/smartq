@@ -37,8 +37,6 @@ public class CommandDeserializer extends JsonDeserializer<Command> {
 
         Command cmd = new Command(type, argList.toArray());;
 
-        System.out.println(cmd.toString());
-
         return cmd;
     }
 }

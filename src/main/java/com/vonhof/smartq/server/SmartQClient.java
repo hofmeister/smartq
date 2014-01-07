@@ -55,6 +55,11 @@ public class SmartQClient<T extends Task> {
 
     private ProtocolCodecFactory protocolCodecFactory = new JacksonCodecFactory();
 
+    /**
+     * Automatically ack messages when they complete, unless an exception is thrown
+     */
+    private boolean autoAcknowledge = false;
+
 
     /**
      * Creates a publish / subscribe queue client.
@@ -72,6 +77,14 @@ public class SmartQClient<T extends Task> {
             this.executor = null;
         }
         this.threads = threads;
+    }
+
+    public boolean isAutoAcknowledge() {
+        return autoAcknowledge;
+    }
+
+    public void setAutoAcknowledge(boolean autoAcknowledge) {
+        this.autoAcknowledge = autoAcknowledge;
     }
 
     /**
@@ -387,6 +400,9 @@ public class SmartQClient<T extends Task> {
                             responseHandler.taskReceived(SmartQClient.this, task);
                             if (log.isDebugEnabled()) {
                                 log.debug("Task processed: " + task.getId() + " on " + SmartQClient.this);
+                            }
+                            if (isAutoAcknowledge()) {
+                                acknowledge(task.getId());
                             }
                         } catch (Exception ex) {
                             log.error("Failed to process task:" + task.getId() + " on " + SmartQClient.this, ex);
