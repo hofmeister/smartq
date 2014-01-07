@@ -100,6 +100,41 @@ public class ClientServerTest {
     }
 
     @Test
+    public void client_supports_auto_acknowledge() throws IOException, InterruptedException {
+        final SmartQServer<Task> server = makeServer();
+
+        final SmartQ<Task, ?> queue = server.getQueue();
+
+        final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
+        final SmartQClient<Task> client = server.makeClient(msgHandler);
+        client.setAutoAcknowledge(true);
+
+        final Task task = new Task("test").withId(UUID.randomUUID());
+
+        queue.submit(task);
+
+        server.listen();
+        client.connect();
+
+        synchronized (msgHandler) {
+            if (!msgHandler.done) {
+                msgHandler.wait(1000);
+            }
+        }
+
+        assertTrue(msgHandler.done);
+
+        Thread.sleep(100);
+
+        assertEquals(0, queue.queueSize());
+        assertEquals(0, queue.runningCount());
+
+        client.close();
+        server.close();
+
+    }
+
+    @Test
     public void can_cancel_over_the_wire() throws IOException, InterruptedException {
         final SmartQServer<Task> server = makeServer();
 
