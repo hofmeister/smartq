@@ -2,6 +2,7 @@ package com.vonhof.smartq;
 
 
 import com.vonhof.smartq.Task.State;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.Stack;
@@ -344,6 +345,48 @@ public class SmartQTest {
 
         assertEquals("ETA is updated when task is ack'ed", 3000L, queue.getEstimatedTimeLeft());
 
+    }
+
+    @Test
+    @Ignore //Unignore these to test speed rates
+    public void can_submit_tasks_at_high_rates() throws InterruptedException {
+        double before = System.currentTimeMillis();
+        double amount = 10000;
+
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        for(int i = 0; i < amount ; i++) {
+            queue.submit(new Task("test", 1000));
+        }
+
+        double secs = (System.currentTimeMillis() - before) / 1000;
+
+        double amountPerSec = amount / secs;
+        System.out.println(queue.getStore().getClass().getName() + ": Submit rate: " + amountPerSec + " / s - took " + secs + " seconds");
+
+        assertTrue("Has a speed rate above 1000 submits / second", amountPerSec > 500);
+    }
+
+    @Test
+    @Ignore //Unignore these to test speed rates
+    public void can_acquire_tasks_at_high_rates() throws InterruptedException {
+        double amount = 10000;
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        for(int i = 0; i < amount ; i++) {
+            queue.submit(new Task("test", 1000));
+        }
+
+        double before = System.currentTimeMillis();
+        for(int i = 0; i < amount ; i++) {
+            Task acquire = queue.acquire();
+            queue.acknowledge(acquire.getId());
+        }
+
+        double secs = (System.currentTimeMillis() - before) / 1000;
+
+        double amountPerSec = amount / secs;
+        System.out.println(queue.getStore().getClass().getName() + ": Acquire rate: " + amountPerSec + " / s - took " + secs + " seconds");
+
+        assertTrue("Has a speed rate above 1000 submits / second", amountPerSec > 100);
     }
 
 

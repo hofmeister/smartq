@@ -121,8 +121,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                     task.getEstimatedDuration()
                     );
             for(String tag :  task.getTags()) {
-                if (log.isDebugEnabled()) {
-                    log.debug(String.format("Tagging task %s with tags: %s", task.getId(), task.getTags()));
+                if (log.isTraceEnabled()) {
+                    log.trace(String.format("Tagging task %s with tags: %s", task.getId(), task.getTags()));
                 }
 
                 client().update(
