@@ -2,12 +2,13 @@ package com.vonhof.smartq;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.UUID;
 
 public class Task<T> {
 
     private UUID id;
-    private String type;
     private long estimatedDuration;
     private long actualDuration;
     private State state = State.PENDING;
@@ -19,6 +20,8 @@ public class Task<T> {
     private int attempts = 0;
 
     private T data;
+    private String referenceId;
+    private TagSet tags = new TagSet();
 
     public Task() {
         this("none");
@@ -34,10 +37,10 @@ public class Task<T> {
         this.estimatedDuration = estimatedDuration;
     }
 
-    public Task(String type) {
-        this.id = UUID.randomUUID();
-        this.type = type;
-        this.created = WatchProvider.currentTime();
+    public Task(String tag) {
+        id = UUID.randomUUID();
+        created = WatchProvider.currentTime();
+        addTag(tag);
     }
 
     public void reset() {
@@ -49,10 +52,6 @@ public class Task<T> {
 
     public void setId(UUID id) {
         this.id = id;
-    }
-
-    public void setType(String type) {
-        this.type = type;
     }
 
     public int getPriority() {
@@ -102,10 +101,6 @@ public class Task<T> {
     @JsonIgnore
     public boolean isRunning() {
         return state.equals(State.RUNNING);
-    }
-
-    public String getType() {
-        return type;
     }
 
     @JsonIgnore
@@ -162,10 +157,43 @@ public class Task<T> {
         this.attempts = attempts;
     }
 
+    public void setReferenceId(String referenceId) {
+        this.referenceId = referenceId;
+    }
+
+    public String getReferenceId() {
+        return referenceId;
+    }
+
+    public TagSet getTags() {
+        return tags;
+    }
+
+    public void setTags(Collection<String> tags) {
+        this.tags = new TagSet(tags);
+    }
+
+    public void addTag(String tag) {
+        tags.add(tag);
+    }
 
     public static enum State {
         PENDING,
         RUNNING,
         ERROR, DONE
+    }
+
+    public static class TagSet extends HashSet<String> {
+
+        public TagSet() {
+        }
+
+        public TagSet(Collection<? extends String> strings) {
+            super(strings);
+        }
+
+        public String first() {
+            return iterator().next();
+        }
     }
 }

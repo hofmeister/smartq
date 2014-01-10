@@ -17,13 +17,13 @@ import org.apache.mina.transport.socket.nio.NioSocketConnector;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -45,7 +45,7 @@ public class SmartQClient<T extends Task> {
 
     private final SmartQClientMessageHandler<T> responseHandler;
 
-    private final Map<UUID, T> activeTasks = new ConcurrentHashMap<UUID, T>();
+    private final Set<UUID> activeTaskIds = Collections.synchronizedSet(new HashSet<UUID>());
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
     private final Executor executor;
     private final int threads;
@@ -256,15 +256,15 @@ public class SmartQClient<T extends Task> {
         if (!checkSession()) {
             return;
         }
-        if (!activeTasks.isEmpty()) {
+        if (!activeTaskIds.isEmpty()) {
             if (log.isDebugEnabled()) {
-                log.debug("Sending recover request to newly opened host: " + activeTasks.size());
+                log.debug("Sending recover request to newly opened host: " + activeTaskIds.size());
             }
 
-            if (!send(new Command(Type.RECOVER, new UUIDList(activeTasks.keySet())))) {
+            if (!send(new Command(Type.RECOVER, new UUIDList(activeTaskIds)))) {
                 throw new RuntimeException("Timed out while waiting for recover");
             }
-            activeTasks.clear();
+            activeTaskIds.clear();
         }
 
         if (!queuedMessages.isEmpty()) {
@@ -293,19 +293,19 @@ public class SmartQClient<T extends Task> {
 
     public void acknowledge(UUID taskId) throws InterruptedException {
         if (send(new Command(Type.ACK, taskId))) {
-            activeTasks.remove(taskId);
+            activeTaskIds.remove(taskId);
         }
     }
 
     public void cancel(UUID taskId, boolean requeue) throws InterruptedException {
         if (send(new Command(Type.NACK, taskId, requeue))) {
-            activeTasks.remove(taskId);
+            activeTaskIds.remove(taskId);
         }
     }
 
     public void failed(UUID taskId) throws InterruptedException {
         if (send(new Command(Type.ERROR, taskId))) {
-            activeTasks.remove(taskId);
+            activeTaskIds.remove(taskId);
         }
     }
 
@@ -391,7 +391,7 @@ public class SmartQClient<T extends Task> {
                     log.debug("Processing task: " + task.getId() + " on " + SmartQClient.this);
                 }
 
-                activeTasks.put(task.getId(),task);
+                activeTaskIds.add(task.getId());
 
                 executor.execute(new Runnable() {
                     @Override

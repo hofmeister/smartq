@@ -41,8 +41,11 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
         tasks.remove(task.getId());
         queuedTasks.remove(task);
         runningTasks.remove(task);
-        runningTypeCount.decrement(task.getType(),1);
-        queuedTypeCount.decrement(task.getType(),1);
+        for(String tag : task.getTags()) {
+            runningTypeCount.decrement(tag,1);
+            queuedTypeCount.decrement(tag,1);    
+        }
+        
     }
 
     @Override
@@ -56,7 +59,9 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
         tasks.put(task.getId(),task);
 
         queuedTasks.add(task);
-        queuedTypeCount.increment(task.getType(),1);
+        for(String tag : task.getTags()) {
+            queuedTypeCount.increment(tag,1);
+        }
 
         sort(queuedTasks);
     }
@@ -65,9 +70,13 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     public synchronized void run(T task) {
         task.setState(State.RUNNING);
         queuedTasks.remove(task);
-        queuedTypeCount.decrement(task.getType(), 1);
         runningTasks.add(task);
-        runningTypeCount.increment(task.getType(),1);
+
+        for(String tag : task.getTags()) {
+            queuedTypeCount.decrement(tag, 1);
+            runningTypeCount.increment(tag,1);
+        }
+
 
         sort(runningTasks);
     }
@@ -92,7 +101,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     public Iterator<T> getQueued(String type) {
         List<T> out = new LinkedList<T>();
         for(T task : queuedTasks) {
-            if (type.equalsIgnoreCase(task.getType())) {
+            if (task.getTags().contains(type)) {
                 out.add(task);
             }
         }
@@ -109,7 +118,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     public Iterator<T> getRunning(String type) {
         List<T> out = new LinkedList<T>();
         for(T task : runningTasks) {
-            if (type.equalsIgnoreCase(task.getType())) {
+            if (task.getTags().contains(type)) {
                 out.add(task);
             }
         }
@@ -147,7 +156,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     public long getQueuedETA(String type) {
         long eta = 0;
         for(T task : queuedTasks) {
-            if (type.equalsIgnoreCase(task.getType())) {
+            if (task.getTags().contains(type)) {
                 eta += task.getEstimatedDuration();
             }
         }

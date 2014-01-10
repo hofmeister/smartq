@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,8 +17,8 @@ public class SmartQ<T extends Task,U>  {
 
     private static final Logger log = Logger.getLogger(SmartQ.class);
 
-    private final Map<String, Integer> taskTypeRateLimits = new ConcurrentHashMap<String, Integer>();
-    private final Map<String, Integer> taskTypeRetryLimits = new ConcurrentHashMap<String, Integer>();
+    private final Map<String, Integer> taskTagRateLimits = new ConcurrentHashMap<String, Integer>();
+    private final Map<String, Integer> taskTagRetryLimits = new ConcurrentHashMap<String, Integer>();
 
     private volatile int subscribers = 0;
     private final TaskStore<T> store;
@@ -90,30 +91,35 @@ public class SmartQ<T extends Task,U>  {
      * @param limit
      */
     public final void setRateLimit(String taskType, int limit) {
-        taskTypeRateLimits.put(taskType, limit);
+        taskTagRateLimits.put(taskType, limit);
     }
 
     /**
      * Gets the max allowed concurrent tasks for a given task type. Returns -1 if no limit is specified.
-     * @param taskType
+     * @param tag
      * @return
      */
-    public final int getRateLimit(String taskType) {
-        if (taskTypeRateLimits.containsKey(taskType)) {
-            return taskTypeRateLimits.get(taskType);
+    public final int getRateLimit(String tag) {
+        if (taskTagRateLimits.containsKey(tag)) {
+            return taskTagRateLimits.get(tag);
         }
         return -1;
     }
 
     public final void setMaxRetries(String taskType, int limit) {
-        taskTypeRetryLimits.put(taskType, limit);
+        taskTagRetryLimits.put(taskType, limit);
     }
 
-    public final int getMaxRetries(String taskType) {
-        if (taskTypeRetryLimits.containsKey(taskType)) {
-            return taskTypeRetryLimits.get(taskType);
+    public final int getMaxRetries(Set<String> tags) {
+        int max = -1;
+        for(String tag : tags) {
+            if (taskTagRetryLimits.containsKey(tag) &&
+                    (max == -1 || taskTagRetryLimits.get(tag) < max)) {
+                max = taskTagRetryLimits.get(tag);
+            }
         }
-        return -1;
+
+        return max;
     }
 
     /**
@@ -161,7 +167,11 @@ public class SmartQ<T extends Task,U>  {
                 Iterator<T> running = getStore().getRunning();
                 while(running.hasNext()) {
                     T task = running.next();
-                    typeETA.increment(task.getType(), task.getEstimatedTimeLeft());
+
+                    for(String tag : task.getTags()) {
+                        typeETA.increment(tag, task.getEstimatedTimeLeft());
+                    }
+
                 }
 
                 for(String type: getStore().getTypes()) {
@@ -305,7 +315,7 @@ public class SmartQ<T extends Task,U>  {
 
                 log.debug("Task marked as failed");
 
-                int maxRetries = getMaxRetries(task.getType());
+                int maxRetries = getMaxRetries(task.getTags());
                 int attempts = task.getAttempts();
 
                 if (maxRetries > attempts) {
@@ -346,22 +356,27 @@ public class SmartQ<T extends Task,U>  {
 
                             Iterator<T> queued = taskType != null ? getStore().getQueued(taskType) : getStore().getQueued();
                             T taskLookup = null;
+
+                            lookupLoop:
                             while(queued.hasNext()) {
                                 final T task = queued.next();
 
-                                int limit = getRateLimit(task.getType());
+                                for(String tag : task.getTags()) {
+                                    int limit = getRateLimit(tag);
 
-                                if (limit > 0) {
-                                    if (!tasksRunning.contains(task.getType())) {
-                                        tasksRunning.set(task.getType(), getStore().runningCount(task.getType()));
-                                    }
-                                    long running = tasksRunning.get(task.getType());
+                                    if (limit > 0) {
+                                        if (!tasksRunning.contains(tag)) {
+                                            tasksRunning.set(tag, getStore().runningCount(tag));
+                                        }
+                                        long running = tasksRunning.get(tag);
 
-                                    if (running >= limit) {
-                                        log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",task.getType(), running, limit));
-                                        continue;
+                                        if (running >= limit) {
+                                            log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",tag, running, limit));
+                                            continue lookupLoop;
+                                        }
                                     }
                                 }
+
 
                                 taskLookup = task;
                                 break;

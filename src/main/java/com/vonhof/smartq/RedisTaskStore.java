@@ -160,9 +160,9 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             Long queueRemoved = jedis.zrem(key(QUEUE_LIST), docId(id));
             Long runRemoved = jedis.zrem(key(RUNNING_LIST), docId(id));
 
-            if (task.getType() != null) {
-                jedis.zrem(typedKey(RUNNING_LIST, task.getType()), docId(task.getId()));
-                jedis.zrem(typedKey(QUEUE_LIST, task.getType()), docId(task.getId()));
+            for(String tag : task.getTags()) {
+                jedis.zrem(typedKey(RUNNING_LIST, tag), docId(task.getId()));
+                jedis.zrem(typedKey(QUEUE_LIST, tag), docId(task.getId()));
             }
 
             decreaseQueued(jedis, task, queueRemoved);
@@ -180,8 +180,9 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             
             writeTask(task, jedis);
             Long added = jedis.zadd(key(QUEUE_LIST), task.getPriority(), docId(task.getId()));
-            if (task.getType() != null) {
-                jedis.zadd(typedKey(QUEUE_LIST, task.getType()), task.getPriority(), docId(task.getId()));
+
+            for(String tag : task.getTags()) {
+                jedis.zadd(typedKey(QUEUE_LIST, tag), task.getPriority(), docId(task.getId()));
             }
 
             increaseQueued(jedis, task, added);
@@ -200,9 +201,9 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             Long removed = jedis.zrem(key(QUEUE_LIST), docId(task.getId()));
             Long added = jedis.zadd(key(RUNNING_LIST), task.getPriority(), docId(task.getId()));
 
-            if (task.getType() != null) {
-                jedis.zrem(typedKey(QUEUE_LIST, task.getType()), docId(task.getId()));
-                jedis.zadd(typedKey(RUNNING_LIST, task.getType()), task.getPriority(), docId(task.getId()));
+            for(String tag : task.getTags()) {
+                jedis.zrem(typedKey(QUEUE_LIST, tag), docId(task.getId()));
+                jedis.zadd(typedKey(RUNNING_LIST, tag), task.getPriority(), docId(task.getId()));
             }
 
             decreaseQueued(jedis, task, removed);
@@ -426,8 +427,8 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
     private void increaseRunning(Jedis jedis, T task, long count) {
         jedis.incrBy(key(RUNNING_COUNT), count);
-        if (task.getType() != null) {
-            jedis.incrBy(typedKey(RUNNING_COUNT,task.getType()), count);
+        for(String tag : task.getTags()) {
+            jedis.incrBy(typedKey(RUNNING_COUNT,tag), count);
         }
     }
 
@@ -435,36 +436,38 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         if (count < 1) return;
 
         jedis.decrBy(key(RUNNING_COUNT), count);
-        if (task.getType() != null) {
-            jedis.decrBy(typedKey(RUNNING_COUNT,task.getType()), count);
+        for(String tag : task.getTags()) {
+            jedis.decrBy(typedKey(RUNNING_COUNT,tag), count);
         }
     }
 
     private void increaseQueued(Jedis jedis, T task, long count) {
         jedis.incrBy(key(QUEUED_COUNT), count);
-        if (task.getType() != null) {
-            jedis.incrBy(typedKey(QUEUED_COUNT,task.getType()), count);
+        for(String tag : task.getTags()) {
+            jedis.incrBy(typedKey(QUEUED_COUNT,tag), count);
         }
 
         jedis.incrBy(key(QUEUED_ETA), task.getEstimatedDuration());
-        if (task.getType() != null) {
-            jedis.incrBy(typedKey(QUEUED_ETA,task.getType()), task.getEstimatedDuration());
+
+        for(String tag : task.getTags()) {
+            jedis.incrBy(typedKey(QUEUED_ETA,tag), task.getEstimatedDuration());
+            ensureType(jedis, tag);
         }
 
-        ensureType(jedis, task.getType());
+
     }
 
     private void decreaseQueued(Jedis jedis, T task, long count) {
         if (count < 1) return;
 
         jedis.decrBy(key(QUEUED_COUNT), count);
-        if (task.getType() != null) {
-            jedis.decrBy(typedKey(QUEUED_COUNT,task.getType()), count);
+        for(String tag : task.getTags()) {
+            jedis.decrBy(typedKey(QUEUED_COUNT,tag), count);
         }
 
         jedis.decrBy(key(QUEUED_ETA), task.getEstimatedDuration());
-        if (task.getType() != null) {
-            jedis.decrBy(typedKey(QUEUED_ETA, task.getType()), task.getEstimatedDuration());
+        for(String tag : task.getTags()) {
+            jedis.decrBy(typedKey(QUEUED_ETA, tag), task.getEstimatedDuration());
         }
     }
 

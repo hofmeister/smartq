@@ -113,14 +113,23 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         try {
             task.setState(State.PENDING);
             client().update(
-                String.format("INSERT INTO \"%s\" (id, content, state, type, priority, estimate) VALUES (?, ?, ?, ?, ?, ?)", tableName),
+                String.format("INSERT INTO \"%s\" (id, content, state, priority, estimate) VALUES (?, ?, ?, ?, ?)", tableName),
                     task.getId(),
                     documentSerializer.serialize(task).getBytes("UTF-8"),
                     STATE_QUEUED,
-                    task.getType(),
                     task.getPriority(),
                     task.getEstimatedDuration()
                     );
+            for(String tag :  task.getTags()) {
+                if (log.isDebugEnabled()) {
+                    log.debug(String.format("Tagging task %s with tags: %s", task.getId(), task.getTags()));
+                }
+
+                client().update(
+                        String.format("INSERT INTO \"%s_tags\" (id, tag) VALUES (?, ?)", tableName),
+                        task.getId(), tag
+                );
+            }
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -233,7 +242,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             @Override
             public Set<String> call() throws Exception {
                 try {
-                    return client().queryStringSet(String.format("SELECT DISTINCT type from \"%s\"", tableName));
+                    return client().queryStringSet(String.format("SELECT DISTINCT tag from \"%s_tags\"", tableName));
                 } catch (SQLException e) {
                     throw new RuntimeException(e);
                 }
@@ -311,6 +320,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     public void dropTable() throws SQLException {
+        client().update(String.format("DROP TABLE \"%s_tags\"",tableName));
         client().update(String.format("DROP TABLE \"%s\"",tableName));
     }
 
@@ -453,7 +463,9 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 if (type != null && !type.isEmpty()) {
                     return client()
                             .queryAll(
-                                String.format("SELECT * FROM \"%s\" WHERE state = ? and type = ? ORDER BY priority DESC LIMIT 100", tableName),state,type
+                                String.format("SELECT * FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                                        "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
+                                        "ORDER BY task.priority DESC LIMIT 100", tableName),state,type
                             ).iterator();
                 } else {
                     return client()
@@ -474,7 +486,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             try {
                 if (type != null && !type.isEmpty()) {
                     return client().queryForLong(
-                            String.format("SELECT count(*) as count FROM \"%s\" WHERE state = ? and type = ?", tableName), state, type);
+                            String.format("SELECT count(task.*) as count FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                                    "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? ", tableName), state, type);
                 } else {
                     return client().queryForLong(
                             String.format("SELECT count(*) as count FROM \"%s\" WHERE state = ?", tableName), state);
@@ -491,7 +504,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         public long sum(int state, String type) {
             try {
                 if (type != null && !type.isEmpty()) {
-                    return client().queryForLong(String.format("SELECT sum(estimate) from \"%s\" WHERE state = ? AND type = ?", tableName),
+                    return client().queryForLong(String.format("SELECT sum(estimate)  FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                            "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? ", tableName),
                             state,type);
                 } else {
                     return client().queryForLong(String.format("SELECT sum(estimate) from \"%s\" WHERE state = ?", tableName),

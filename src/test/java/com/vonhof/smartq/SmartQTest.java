@@ -197,7 +197,7 @@ public class SmartQTest {
         Task running3 = queue.acquire();
 
         assertEquals(queue.queueSize(),1);
-        assertEquals("test2",running3.getType());
+        assertEquals("test2",running3.getTags().first());
 
         ThreadedRunner runner = new ThreadedRunner(queue);
         runner.start();
