@@ -212,6 +212,22 @@ public class SmartQTest {
     }
 
     @Test
+    public void tasks_with_multiple_rate_limited_tags_gets_the_most_restricted() throws InterruptedException {
+        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+
+        queue.setRateLimit("test", 2);
+        queue.setRateLimit("test2", 4);
+        queue.setRateLimit("test3", 10);
+
+        Task task1 = new Task("test")
+                .withTag("test2")
+                .withTag("test3")
+                .withPriority(4);
+
+        assertEquals(2, queue.getRateLimit(task1));
+    }
+
+    @Test
     public void can_do_simple_estimations() throws InterruptedException {
         SmartQ<Task,DefaultTaskResult> queue = makeQueue();
 

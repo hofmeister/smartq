@@ -177,6 +177,11 @@ public class Task<T> {
         tags.add(tag);
     }
 
+    public Task withTag(String tag) {
+        addTag(tag);
+        return this;
+    }
+
     public static enum State {
         PENDING,
         RUNNING,

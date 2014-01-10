@@ -361,22 +361,9 @@ public class SmartQ<T extends Task,U>  {
                             while(queued.hasNext()) {
                                 final T task = queued.next();
 
-                                for(String tag : task.getTags()) {
-                                    int limit = getRateLimit(tag);
-
-                                    if (limit > 0) {
-                                        if (!tasksRunning.contains(tag)) {
-                                            tasksRunning.set(tag, getStore().runningCount(tag));
-                                        }
-                                        long running = tasksRunning.get(tag);
-
-                                        if (running >= limit) {
-                                            log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",tag, running, limit));
-                                            continue lookupLoop;
-                                        }
-                                    }
+                                if (isRateLimited(tasksRunning, task)) {
+                                    continue lookupLoop;
                                 }
-
 
                                 taskLookup = task;
                                 break;
@@ -410,6 +397,41 @@ public class SmartQ<T extends Task,U>  {
             }
 
             return selectedTask;
+    }
+
+    public boolean isRateLimited(T task) throws InterruptedException {
+        return isRateLimited(new CountMap<String>(), task);
+    }
+
+    private boolean isRateLimited(CountMap<String> tasksRunning, T task) throws InterruptedException {
+        for(String tag : task.getTags()) {
+            int limit = getRateLimit(tag);
+
+            if (limit > 0) {
+                if (!tasksRunning.contains(tag)) {
+                    tasksRunning.set(tag, getStore().runningCount(tag));
+                }
+                long running = tasksRunning.get(tag);
+
+                if (running >= limit) {
+                    log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",tag, running, limit));
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public int getRateLimit(T task) throws InterruptedException {
+        int result = -1;
+        for(String tag : task.getTags()) {
+            int limit = getRateLimit(tag);
+
+            if (limit > 0 && (result == -1 || limit < result)) {
+                result = limit;
+            }
+        }
+        return result;
     }
 
     public List<T> getRunningTasks(String type) {
