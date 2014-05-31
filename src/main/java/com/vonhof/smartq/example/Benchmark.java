@@ -9,6 +9,7 @@ import com.vonhof.smartq.RedisTaskStore;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.TaskStore;
+import org.apache.log4j.Logger;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
@@ -119,7 +120,7 @@ public class Benchmark {
                     int sPerSec = sSince / secs;
                     int dPerSec = dSince / secs;
 
-                    System.out.println(String.format("Acquires: %s (%s / s) | Submits: %s (%s / s) | Done: %s (%s / s) | Time: %s",
+                    System.out.println(String.format("Acquires: %s (%s / s) | Submits: %s (%s / s) | Done: %s (%s / s) | Time: %s secs",
                             aSince,aPerSec,
                             sSince,sPerSec,
                             dSince,dPerSec,
@@ -154,6 +155,7 @@ public class Benchmark {
     }
 
     private static class StressSubscriber extends Thread {
+        private static final Logger log = Logger.getLogger(StressSubscriber.class);
         private final SmartQ<Task, DefaultTaskResult> queue;
 
         private StressSubscriber(int num) throws IOException, SQLException {
@@ -172,8 +174,7 @@ public class Benchmark {
                 } catch (InterruptedException e) {
                     return;
                 } catch (Exception e) {
-                    e.printStackTrace();
-                    continue;
+                    log.error("Failed to ack", e);
                 }
             }
         }

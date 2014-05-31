@@ -285,6 +285,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             throw new RuntimeException(e);
         } finally {
             if (isolationStartedInThisCall) {
+                isolated = false;
                 try {
                     client().connection.setAutoCommit(true);
                 } catch (SQLException e) {}
@@ -349,7 +350,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
         private void lockTable() throws SQLException {
             execute(String.format("LOCK TABLE \"%s\" IN ACCESS EXCLUSIVE MODE",tableName));
-            log.info("Locking table");
+            log.debug("Locking table");
         }
 
         private List<Map<String,Object>> query(String sql, Object ... args) throws SQLException {
