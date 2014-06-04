@@ -6,7 +6,7 @@
 
     <groupId>com.vonhof</groupId>
     <artifactId>SmartQ</artifactId>
-    <version>0.5.1</version>
+    <version>0.5.2</version>
 
     <licenses>
         <license>
@@ -42,10 +42,9 @@
         <repository>
             <id>nexus</id>
             <name>Releases</name>
-            <url>http://serv3.vonhofmeister.com:8081/nexus/content/repositories/releases/</url>
+            <url>${nexus.url}</url>
         </repository>
     </distributionManagement>
-
 
     <dependencies>
         <dependency>
