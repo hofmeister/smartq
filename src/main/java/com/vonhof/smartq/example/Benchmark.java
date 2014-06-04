@@ -44,6 +44,10 @@ public class Benchmark {
         return store;
     }
 
+    private static TaskStore<Task> makeMemStore() {
+        return STORE;
+    }
+
     private static TaskStore<Task> makeStore() throws SQLException, IOException {
         return makePGStore();
     }
@@ -55,7 +59,7 @@ public class Benchmark {
 
         List<StressSubscriber> subscribers = new ArrayList<StressSubscriber>();
 
-        for(int i = 0; i < 16; i++) {
+        for(int i = 0; i < 20; i++) {
             StressSubscriber subscriber = new StressSubscriber(i);
             subscribers.add(subscriber);
             subscriber.start();
@@ -64,9 +68,9 @@ public class Benchmark {
         System.out.println("Submitting tasks");
 
 
-        for(int i = 0; i < 1000; i++) {
-            queue.submit(new Task()
-                    .withPriority((int) Math.round(Math.random() * 10)));
+        for(int i = 0; i < 30; i++) {
+            StressPublisher publisher = new StressPublisher(i);
+            publisher.start();
         }
 
 
@@ -151,6 +155,30 @@ public class Benchmark {
 
         public void close() {
             timer.cancel();
+        }
+    }
+
+    private static class StressPublisher extends Thread {
+        private static final Logger log = Logger.getLogger(StressSubscriber.class);
+        private final SmartQ<Task, DefaultTaskResult> queue;
+
+        private StressPublisher(int num) throws IOException, SQLException {
+            super("Stress Publisher "+num);
+
+            queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
+            queue.addListener(BENCHMARK_LISTENER);
+        }
+
+        @Override
+        public void run() {
+            for(int i = 0; i < 10000; i++) {
+                try {
+                    queue.submit(new Task()
+                            .withPriority((int) Math.round(Math.random() * 10)));
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
         }
     }
 
