@@ -81,7 +81,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         client.get();
     }
 
-    private synchronized PostgresClient client() {
+    private PostgresClient client() {
         return client.get();
     }
 
