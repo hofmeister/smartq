@@ -22,7 +22,7 @@ public class SmartQ<T extends Task,U>  {
 
     private volatile int subscribers = 0;
     private final TaskStore<T> store;
-    private EstimateMap<String> typeEstimate = new EstimateMap<String>();
+
 
     private final List<QueueListener> listeners = new ArrayList<QueueListener>();
     private boolean interrupted = false;
@@ -184,7 +184,7 @@ public class SmartQ<T extends Task,U>  {
     }
 
     public long getEstimateForTaskType(String type) {
-        long average = typeEstimate.average(type);
+        long average = getStore().getTaskTypeEstimate(type);
         if (average < 1) {
             average = defaultTaskEstimate;
         }
@@ -219,7 +219,9 @@ public class SmartQ<T extends Task,U>  {
     
     public boolean submit(final T task) throws InterruptedException {
         for(Map.Entry<String,Integer> entry : (Set<Map.Entry<String,Integer>>)task.getTags().entrySet()) {
-            setRateLimit(entry.getKey(), entry.getValue());
+            if (entry.getValue() > 0) {
+                setRateLimit(entry.getKey(), entry.getValue());
+            }
         }
 
         getStore().isolatedChange(new Callable<T>() {
@@ -291,7 +293,7 @@ public class SmartQ<T extends Task,U>  {
 
                 task.setState(Task.State.DONE);
                 task.setEnded(WatchProvider.currentTime());
-                typeEstimate.add(task.getType(), task.getActualDuration());
+                getStore().addTaskTypeDuration(task.getType(), task.getActualDuration());
                 log.debug("Acked task");
                 getStore().remove(task);
                 getStore().signalChange();
@@ -509,7 +511,7 @@ public class SmartQ<T extends Task,U>  {
 
     }
 
-    public void setEstimateForTaskType(String test, long estimate) {
-        typeEstimate.set(test, estimate);
+    public void setEstimateForTaskType(String type, long estimate) {
+        getStore().setTaskTypeEstimate(type, estimate);
     }
 }

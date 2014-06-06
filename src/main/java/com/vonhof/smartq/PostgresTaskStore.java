@@ -192,6 +192,48 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
+    public long getTaskTypeEstimate(String type) {
+        try {
+            return client().queryForLong(String.format("SELECT sum(duration) / count(*) from \"%s_estimates\" WHERE type = ?", tableName), type);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void addTaskTypeDuration(String type, long duration) {
+        try {
+
+            client().update(
+                    String.format("INSERT INTO \"%s_estimates\" (type, duration) VALUES (?, ?)", tableName),
+                    type,
+                    duration
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void setTaskTypeEstimate(String type, long estimate) {
+        try {
+
+            client().update(
+                    String.format("DELETE FROM \"%s_estimates\" WHERE type = ?", tableName),
+                    type
+            );
+
+            client().update(
+                    String.format("INSERT INTO \"%s_estimates\" (type, duration) VALUES (?, ?)", tableName),
+                    type,
+                    estimate
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
     public Iterator<T> getQueued(String type) {
         return client().getList(STATE_QUEUED, type);
     }
@@ -207,62 +249,37 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public long queueSize() throws InterruptedException {
-        return isolatedChange(new Callable<Long>() {
-            @Override
-            public Long call() throws Exception {
-                return client().count(STATE_QUEUED);
-            }
-        });
+    public long queueSize() {
+        return client().count(STATE_QUEUED);
     }
 
     @Override
-    public long runningCount() throws InterruptedException {
-        return isolatedChange(new Callable<Long>() {
-            @Override
-            public Long call() throws Exception {
-                return client().count(STATE_RUNNING);
-            }
-        });
+    public long runningCount() {
+        return client().count(STATE_RUNNING);
     }
 
     @Override
-    public long queueSize(final String type) throws InterruptedException {
-        return isolatedChange(new Callable<Long>() {
-            @Override
-            public Long call() throws Exception {
-                return client().count(STATE_QUEUED, type);
-            }
-        });
+    public long queueSize(final String type)  {
+        return client().count(STATE_QUEUED, type);
     }
 
     @Override
-    public long runningCount(final String type) throws InterruptedException {
-        return isolatedChange(new Callable<Long>() {
-            @Override
-            public Long call() throws Exception {
-                return client().count(STATE_RUNNING, type);
-            }
-        });
+    public long runningCount(final String type) {
+        return client().count(STATE_RUNNING, type);
     }
 
     @Override
     public Set<String> getTags() throws InterruptedException {
-        return isolatedChange(new Callable<Set<String>>() {
-            @Override
-            public Set<String> call() throws Exception {
-                try {
-                    return client().queryStringSet(String.format("SELECT DISTINCT tag from \"%s_tags\"", tableName));
-                } catch (SQLException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        });
+        try {
+            return client().queryStringSet(String.format("SELECT DISTINCT tag from \"%s_tags\"", tableName));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
 
     }
 
     @Override
-    public synchronized <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
+    public <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
         boolean isolationStartedInThisCall = false;
         try {
             if (!isolated) {
@@ -634,7 +651,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
                 synchronized (this) {
                     try {
-                        wait(1000);
+                        wait(10000);
                     } catch (InterruptedException e) {
                         return;
                     }

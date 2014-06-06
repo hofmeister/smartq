@@ -32,3 +32,16 @@ WITH (
 ALTER TABLE %tableName%_tags
   ADD FOREIGN KEY (id) REFERENCES %tableName% (id) ON UPDATE CASCADE ON DELETE CASCADE;
 
+
+CREATE TABLE %tableName%_estimates
+(
+
+  "type" character varying(32) NOT NULL,
+  duration bigint,
+  "order" SERIAL,
+  CONSTRAINT %tableName%_estimates_pkey PRIMARY KEY ("type", "order")
+)
+WITH (
+    OIDS=FALSE
+);
+

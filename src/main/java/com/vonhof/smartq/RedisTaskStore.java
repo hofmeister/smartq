@@ -263,6 +263,21 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
+    public long getTaskTypeEstimate(String type) {
+        throw new RuntimeException("Method not implemented");
+    }
+
+    @Override
+    public void addTaskTypeDuration(String type, long duration) {
+        throw new RuntimeException("Method not implemented");
+    }
+
+    @Override
+    public void setTaskTypeEstimate(String type, long estimate) {
+        throw new RuntimeException("Method not implemented");
+    }
+
+    @Override
     public synchronized Iterator<T> getRunning() {
         return readTasks(RUNNING_LIST);
     }

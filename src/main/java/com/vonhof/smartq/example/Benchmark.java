@@ -22,8 +22,8 @@ import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Benchmark {
-    public static final BenchmarkListener BENCHMARK_LISTENER = new BenchmarkListener();
     public static final MemoryTaskStore<Task> STORE = new MemoryTaskStore<Task>();
+    public static BenchmarkListener benchmarkListener;
 
     private static TaskStore<Task> makeRedisStore() {
         JedisPoolConfig jConf = new JedisPoolConfig();
@@ -49,17 +49,18 @@ public class Benchmark {
     }
 
     private static TaskStore<Task> makeStore() throws SQLException, IOException {
-        return makePGStore();
+        return makeMemStore();
     }
 
     public static void main (String[] args) throws InterruptedException, IOException, SQLException {
 
         final SmartQ<Task, DefaultTaskResult> queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
-        queue.addListener(BENCHMARK_LISTENER);
+        benchmarkListener = new BenchmarkListener(queue);
+        queue.addListener(benchmarkListener);
 
         List<StressSubscriber> subscribers = new ArrayList<StressSubscriber>();
 
-        for(int i = 0; i < 20; i++) {
+        for(int i = 0; i < 10; i++) {
             StressSubscriber subscriber = new StressSubscriber(i);
             subscribers.add(subscriber);
             subscriber.start();
@@ -68,7 +69,7 @@ public class Benchmark {
         System.out.println("Submitting tasks");
 
 
-        for(int i = 0; i < 30; i++) {
+        for(int i = 0; i < 5; i++) {
             StressPublisher publisher = new StressPublisher(i);
             publisher.start();
         }
@@ -93,7 +94,7 @@ public class Benchmark {
 
         System.out.println("All done");
 
-        BENCHMARK_LISTENER.close();
+        benchmarkListener.close();
     }
 
     private static class BenchmarkListener implements QueueListener {
@@ -104,21 +105,25 @@ public class Benchmark {
         private long interval = 1000;
         private Timer timer = new Timer();
         private long first;
+        private final SmartQ<Task, DefaultTaskResult> queue;
 
-        private BenchmarkListener() {
+        private BenchmarkListener(final SmartQ<Task, DefaultTaskResult> queue) {
+            this.queue = queue;
+
             timer.scheduleAtFixedRate(new TimerTask() {
                 @Override
                 public void run() {
-                    int aSince = acquires.intValue();
-                    int sSince = submits.intValue();
-                    int dSince = dones.intValue();
-
                     if (first < 1) {
                          return;
                     }
+
                     int secs = (int) ((System.currentTimeMillis()-first) / 1000);
 
                     if (secs < 1) return;
+
+                    int aSince = acquires.getAndSet(0);
+                    int sSince = submits.getAndSet(0);
+                    int dSince = dones.getAndSet(0);
 
                     int aPerSec = aSince / secs;
                     int sPerSec = sSince / secs;
@@ -129,7 +134,6 @@ public class Benchmark {
                             sSince,sPerSec,
                             dSince,dPerSec,
                             secs));
-
                 }
             }, interval, interval);
 
@@ -166,14 +170,14 @@ public class Benchmark {
             super("Stress Publisher "+num);
 
             queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
-            queue.addListener(BENCHMARK_LISTENER);
+            queue.addListener(benchmarkListener);
         }
 
         @Override
         public void run() {
             for(int i = 0; i < 10000; i++) {
                 try {
-                    queue.submit(new Task()
+                    queue.submit(new Task("test")
                             .withPriority((int) Math.round(Math.random() * 10)));
                 } catch (InterruptedException e) {
                     return;
@@ -190,7 +194,7 @@ public class Benchmark {
             super("Stress subscriber "+num);
 
             queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
-            queue.addListener(BENCHMARK_LISTENER);
+            queue.addListener(benchmarkListener);
         }
 
         @Override
@@ -198,6 +202,14 @@ public class Benchmark {
             while(true) {
                 try {
                     Task t = queue.acquire();
+
+                    log.info("Performing work");
+                    synchronized (this) {
+                        wait((int) Math.round(Math.random() * 10000));
+                    }
+
+                    log.info("Work done");
+
                     queue.acknowledge(t.getId());
                 } catch (InterruptedException e) {
                     return;

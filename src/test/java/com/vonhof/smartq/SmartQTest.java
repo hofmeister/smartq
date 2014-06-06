@@ -468,7 +468,7 @@ public class SmartQTest {
     }
 
     @Test
-    @Ignore //Unignore these to test speed rates
+    @Ignore
     public void can_acquire_tasks_at_high_rates() throws InterruptedException {
         double amount = 10000;
         SmartQ<Task, DefaultTaskResult> queue = makeQueue();

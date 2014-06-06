@@ -18,6 +18,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     private final List<T> failedTasks = Collections.synchronizedList(new LinkedList<T>());
     private final CountMap<String> runningTypeCount = new CountMap<String>();
     private final CountMap<String> queuedTypeCount = new CountMap<String>();
+    private EstimateMap<String> typeEstimate = new EstimateMap<String>();
 
     private final Lock lock = new ReentrantLock();
 
@@ -42,7 +43,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
         queuedTasks.remove(task);
         runningTasks.remove(task);
         for(String tag : (Set<String>)task.getTagSet()) {
-            runningTypeCount.decrement(tag,1);
+            runningTypeCount.decrement(tag, 1);
             queuedTypeCount.decrement(tag,1);    
         }
         
@@ -56,7 +57,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public synchronized void queue(T task) {
         task.setState(State.PENDING);
-        tasks.put(task.getId(),task);
+        tasks.put(task.getId(), task);
 
         queuedTasks.add(task);
         for(String tag : (Set<String>)task.getTagSet()) {
@@ -91,12 +92,12 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
 
     @Override
     public synchronized Iterator<T> getFailed() {
-        return Collections.unmodifiableList(failedTasks).iterator();
+        return Collections.unmodifiableList(new LinkedList<T>(failedTasks)).iterator();
     }
 
     @Override
     public synchronized Iterator<T> getQueued() {
-        return Collections.unmodifiableList(queuedTasks).iterator();
+        return Collections.unmodifiableList(new LinkedList<T>(queuedTasks)).iterator();
     }
 
     @Override
@@ -107,6 +108,21 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public synchronized Iterator<T> getPending(String tag) {
         return new CombinedIterator(getRunning(tag), getQueued(tag));
+    }
+
+    @Override
+    public long getTaskTypeEstimate(String type) {
+        return typeEstimate.average(type);
+    }
+
+    @Override
+    public void addTaskTypeDuration(String type, long duration) {
+        typeEstimate.add(type, duration);
+    }
+
+    @Override
+    public void setTaskTypeEstimate(String type, long estimate) {
+        typeEstimate.set(type, estimate);
     }
 
     @Override
@@ -123,7 +139,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     public synchronized Iterator<T> getRunning() {
-        return Collections.unmodifiableList(runningTasks).iterator();
+        return Collections.unmodifiableList(new LinkedList<T>(runningTasks)).iterator();
     }
 
     @Override

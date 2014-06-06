@@ -2,11 +2,12 @@ package com.vonhof.smartq;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 
 public class EstimateMap<T> {
-    private final Map<T,Long> totals = new HashMap<T, Long>();
-    private final Map<T,Long> counts = new HashMap<T, Long>();
+    private final Map<T,Long> totals = new ConcurrentHashMap<T, Long>();
+    private final Map<T,Long> counts = new ConcurrentHashMap<T, Long>();
 
     private void ensureKey(T key) {
         if (!totals.containsKey(key)) {
@@ -28,11 +29,11 @@ public class EstimateMap<T> {
         counts.put(key, count);
     }
 
-    public synchronized void add(T type, long duration) {
+    public void add(T type, long duration) {
         increment(type, duration);
     }
 
-    public synchronized void set(T type, long duration) {
+    public void set(T type, long duration) {
         totals.put(type, duration);
         counts.put(type, 1L);
     }

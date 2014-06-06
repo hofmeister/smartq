@@ -49,4 +49,10 @@ public interface TaskStore<T extends Task> {
     Iterator<T> getPending();
 
     Iterator<T> getPending(String tag);
+
+    long getTaskTypeEstimate(String type);
+
+    void addTaskTypeDuration(String type, long duration);
+
+    void setTaskTypeEstimate(String type, long estimate);
 }
