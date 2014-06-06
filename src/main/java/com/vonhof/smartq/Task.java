@@ -1,16 +1,16 @@
 package com.vonhof.smartq;
 
+import org.apache.commons.codec.digest.DigestUtils;
+import org.apache.commons.lang.StringUtils;
 import org.codehaus.jackson.annotate.JsonIgnore;
+import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.UUID;
+import java.util.*;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Task<T> {
 
     private UUID id;
-    private long estimatedDuration;
-    private long actualDuration;
     private State state = State.PENDING;
     private long created = 0;
     private long started = 0;
@@ -21,10 +21,25 @@ public class Task<T> {
 
     private T data;
     private String referenceId;
-    private TagSet tags = new TagSet();
+    private Map<String,Integer> tags = new HashMap<String, Integer>();
+    private String type;
 
     public Task() {
         this("none");
+    }
+
+    public Task(Task<T> task) {
+        this.id = task.id;
+        this.state = task.state;
+        this.created = task.created;
+        this.started = task.started;
+        this.ended = task.ended;
+        this.priority = task.priority;
+        this.attempts = task.attempts;
+        this.data = task.data;
+        this.referenceId = task.referenceId;
+        this.tags = task.tags;
+        this.type = task.type;
     }
 
     public Task withPriority(int priority) {
@@ -32,15 +47,11 @@ public class Task<T> {
         return this;
     }
 
-    public Task(String type, long estimatedDuration) {
-        this(type);
-        this.estimatedDuration = estimatedDuration;
-    }
-
     public Task(String tag) {
         id = UUID.randomUUID();
         created = WatchProvider.currentTime();
         addTag(tag);
+        this.type = tag;
     }
 
     public void reset() {
@@ -90,8 +101,8 @@ public class Task<T> {
         this.ended = ended;
     }
 
-    public void setStarted(long ended) {
-        this.ended = ended;
+    public void setStarted(long started) {
+        this.started = started;
     }
 
     public void setState(State state) {
@@ -103,38 +114,10 @@ public class Task<T> {
         return state.equals(State.RUNNING);
     }
 
-    @JsonIgnore
-    public long getEstimatedTimeLeft() {
-        switch (state) {
-            case PENDING:
-                return getEstimatedDuration();
-            case RUNNING:
-                long currentDuration = WatchProvider.currentTime() - started;
-                if (currentDuration > getEstimatedDuration()) {
-                    //Has exceeded the estimated time - we don't know how much might be left.
-                    return 0;
-                }
-                return getEstimatedDuration() - currentDuration;
-        }
-
-        return 0;
-    }
-
-    public long getEstimatedDuration() {
-        return estimatedDuration;
-    }
-
-    public void setEstimatedDuration(long estimatedDuration) {
-        this.estimatedDuration = estimatedDuration;
-    }
-
     public long getActualDuration() {
-        return actualDuration;
+        return ended > 0 ? ended - started : WatchProvider.currentTime() - started;
     }
 
-    public void setActualDuration(long actualDuration) {
-        this.actualDuration = actualDuration;
-    }
 
     public T getData() {
         return data;
@@ -165,21 +148,50 @@ public class Task<T> {
         return referenceId;
     }
 
-    public TagSet getTags() {
+    public Map<String, Integer> getTags() {
         return tags;
     }
 
-    public void setTags(Collection<String> tags) {
-        this.tags = new TagSet(tags);
+    public void setTags(Map<String, Integer> tags) {
+        this.tags = tags;
     }
 
     public void addTag(String tag) {
-        tags.add(tag);
+        addRateLimit(tag, -1);
     }
 
     public Task withTag(String tag) {
         addTag(tag);
         return this;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+        if (!tags.containsKey(type)) {
+            addTag(type);
+        }
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void addRateLimit(String tag, int maxConcurrency) {
+        tags.put(tag, maxConcurrency);
+    }
+
+    @JsonIgnore
+    public Set<String> getTagSet() {
+        return tags.keySet();
+    }
+
+    @Override
+    public String toString() {
+        return "Task{" +
+                "type='" + type + '\'' +
+                ", id=" + id +
+                ", tags=" + tags +
+                '}';
     }
 
     public static enum State {
@@ -188,17 +200,20 @@ public class Task<T> {
         ERROR, DONE
     }
 
-    public static class TagSet extends HashSet<String> {
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
 
-        public TagSet() {
-        }
+        Task task = (Task) o;
 
-        public TagSet(Collection<? extends String> strings) {
-            super(strings);
-        }
+        if (id != null ? !id.equals(task.id) : task.id != null) return false;
 
-        public String first() {
-            return iterator().next();
-        }
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        return id != null ? id.hashCode() : 0;
     }
 }

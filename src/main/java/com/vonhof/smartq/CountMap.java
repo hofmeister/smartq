@@ -88,4 +88,8 @@ public class CountMap<T>  {
     public Set<T> keySet() {
         return map.keySet();
     }
+
+    public void clear() {
+        map.clear();
+    }
 }

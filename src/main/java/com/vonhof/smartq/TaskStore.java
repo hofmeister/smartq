@@ -38,11 +38,7 @@ public interface TaskStore<T extends Task> {
 
     public long runningCount(String type) throws InterruptedException;
 
-    public Set<String> getTypes() throws InterruptedException;
-
-    public long getQueuedETA(String type);
-
-    public long getQueuedETA();
+    public Set<String> getTags() throws InterruptedException;
 
     public <U> U isolatedChange(Callable<U> callable) throws InterruptedException;
 
@@ -50,5 +46,7 @@ public interface TaskStore<T extends Task> {
 
     public void signalChange();
 
+    Iterator<T> getPending();
 
+    Iterator<T> getPending(String tag);
 }

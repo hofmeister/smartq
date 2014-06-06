@@ -21,7 +21,6 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     private static final String RUNNING_LIST = "tasks/running";
 
     private static final String QUEUED_COUNT = "queued/count";
-    private static final String QUEUED_ETA = "queued/eta";
     private static final String QUEUE_LIST = "tasks/queued";
     private static final String ERROR_LIST = "tasks/failed";
 
@@ -160,7 +159,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             Long queueRemoved = jedis.zrem(key(QUEUE_LIST), docId(id));
             Long runRemoved = jedis.zrem(key(RUNNING_LIST), docId(id));
 
-            for(String tag : task.getTags()) {
+            for(String tag : (Set<String>)task.getTagSet()) {
                 jedis.zrem(typedKey(RUNNING_LIST, tag), docId(task.getId()));
                 jedis.zrem(typedKey(QUEUE_LIST, tag), docId(task.getId()));
             }
@@ -181,7 +180,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             writeTask(task, jedis);
             Long added = jedis.zadd(key(QUEUE_LIST), task.getPriority(), docId(task.getId()));
 
-            for(String tag : task.getTags()) {
+            for(String tag : (Set<String>)task.getTagSet()) {
                 jedis.zadd(typedKey(QUEUE_LIST, tag), task.getPriority(), docId(task.getId()));
             }
 
@@ -201,7 +200,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             Long removed = jedis.zrem(key(QUEUE_LIST), docId(task.getId()));
             Long added = jedis.zadd(key(RUNNING_LIST), task.getPriority(), docId(task.getId()));
 
-            for(String tag : task.getTags()) {
+            for(String tag : (Set<String>)task.getTagSet()) {
                 jedis.zrem(typedKey(QUEUE_LIST, tag), docId(task.getId()));
                 jedis.zadd(typedKey(RUNNING_LIST, tag), task.getPriority(), docId(task.getId()));
             }
@@ -251,6 +250,16 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public synchronized Iterator<T> getQueued(String type) {
         return readTasks(QUEUE_LIST + "/" + type);
+    }
+
+    @Override
+    public Iterator<T> getPending() {
+        throw new RuntimeException("Method not implemented");
+    }
+
+    @Override
+    public Iterator<T> getPending(String tag) {
+        throw new RuntimeException("Method not implemented");
     }
 
     @Override
@@ -314,7 +323,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized Set<String> getTypes() {
+    public synchronized Set<String> getTags() {
         final Jedis jedis = jedisPool.getResource();
         try {
             return jedis.smembers(key(TYPE_LIST));
@@ -322,22 +331,6 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
             jedisPool.returnResource(jedis);
         }
     }
-
-    @Override
-    public synchronized long getQueuedETA(String type) {
-        final Jedis jedis = jedisPool.getResource();
-        try {
-            return Long.valueOf(jedis.get(typedKey(QUEUED_ETA, type)));
-        } finally {
-            jedisPool.returnResource(jedis);
-        }
-    }
-
-    @Override
-    public synchronized long getQueuedETA() {
-        return getQueuedETA(null);
-    }
-
 
     public void unlock() {
         if (LOCK_ID.get().equals(currentLockId)) {
@@ -427,7 +420,7 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
 
     private void increaseRunning(Jedis jedis, T task, long count) {
         jedis.incrBy(key(RUNNING_COUNT), count);
-        for(String tag : task.getTags()) {
+        for(String tag : (Set<String>)task.getTagSet()) {
             jedis.incrBy(typedKey(RUNNING_COUNT,tag), count);
         }
     }
@@ -436,21 +429,18 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         if (count < 1) return;
 
         jedis.decrBy(key(RUNNING_COUNT), count);
-        for(String tag : task.getTags()) {
+        for(String tag : (Set<String>)task.getTagSet()) {
             jedis.decrBy(typedKey(RUNNING_COUNT,tag), count);
         }
     }
 
     private void increaseQueued(Jedis jedis, T task, long count) {
         jedis.incrBy(key(QUEUED_COUNT), count);
-        for(String tag : task.getTags()) {
+        for(String tag : (Set<String>)task.getTagSet()) {
             jedis.incrBy(typedKey(QUEUED_COUNT,tag), count);
         }
 
-        jedis.incrBy(key(QUEUED_ETA), task.getEstimatedDuration());
-
-        for(String tag : task.getTags()) {
-            jedis.incrBy(typedKey(QUEUED_ETA,tag), task.getEstimatedDuration());
+        for(String tag : (Set<String>)task.getTagSet()) {
             ensureType(jedis, tag);
         }
 
@@ -461,13 +451,8 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
         if (count < 1) return;
 
         jedis.decrBy(key(QUEUED_COUNT), count);
-        for(String tag : task.getTags()) {
+        for(String tag : (Set<String>)task.getTagSet()) {
             jedis.decrBy(typedKey(QUEUED_COUNT,tag), count);
-        }
-
-        jedis.decrBy(key(QUEUED_ETA), task.getEstimatedDuration());
-        for(String tag : task.getTags()) {
-            jedis.decrBy(typedKey(QUEUED_ETA, tag), task.getEstimatedDuration());
         }
     }
 
@@ -489,17 +474,15 @@ public class RedisTaskStore<T extends Task> implements TaskStore<T> {
                 key(CHANGES),
                 key(LOCK),
                 key(RUNNING_COUNT),
-                key(QUEUED_COUNT),
-                key(QUEUED_ETA)
+                key(QUEUED_COUNT)
             );
 
-            for(String type : getTypes()) {
+            for(String type : getTags()) {
                 pipe.del(
                     typedKey(RUNNING_COUNT, type),
                     typedKey(QUEUED_COUNT, type),
                     typedKey(RUNNING_LIST, type),
-                    typedKey(QUEUE_LIST, type),
-                    typedKey(QUEUED_ETA, type)
+                    typedKey(QUEUE_LIST, type)
                 );
             }
             pipe.sync();

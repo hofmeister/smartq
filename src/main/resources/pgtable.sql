@@ -4,7 +4,9 @@ CREATE TABLE %tableName%
   content bytea NOT NULL,
   state integer,
   priority integer,
-  estimate bigint,
+  created bigint,
+  "order" SERIAL,
+  "type" character varying(65),
   CONSTRAINT %tableName%_pkey PRIMARY KEY (id)
 )
 WITH (
@@ -14,7 +16,7 @@ WITH (
 CREATE INDEX %tableName%_state_priority_idx
   ON %tableName%
   USING btree
-  (state, priority DESC);
+  (state DESC, priority DESC, created DESC, "order" ASC);
 
 
 CREATE TABLE %tableName%_tags

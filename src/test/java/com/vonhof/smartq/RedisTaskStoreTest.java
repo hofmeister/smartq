@@ -1,11 +1,13 @@
 package com.vonhof.smartq;
 
 
+import org.junit.Ignore;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.UUID;
 
+@Ignore
 public class RedisTaskStoreTest extends TaskStoreTest {
 
     @Override

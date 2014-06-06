@@ -22,9 +22,11 @@ public class SmartQ<T extends Task,U>  {
 
     private volatile int subscribers = 0;
     private final TaskStore<T> store;
+    private EstimateMap<String> typeEstimate = new EstimateMap<String>();
 
     private final List<QueueListener> listeners = new ArrayList<QueueListener>();
     private boolean interrupted = false;
+    private long defaultTaskEstimate = 60000;
 
     public SmartQ(final TaskStore<T> store) {
         this.store = store;
@@ -73,29 +75,62 @@ public class SmartQ<T extends Task,U>  {
         }
     }
 
-    protected int getConcurrency(String taskType) {
+    protected int getConcurrency(String tag) {
         int concurrency = getConcurrency();
 
-        int concurrencyLimit = getRateLimit(taskType);
-        if (concurrencyLimit < 0) {
+        int concurrencyLimit = getRateLimit(tag);
+        if (concurrencyLimit < 1) {
             return concurrency;
         } else {
             return Math.min(concurrencyLimit,concurrency);
         }
     }
 
-    /**
-     * Limit the throughput of a specific task type ( e.g. how many tasks of the given type that may be processed
-     * concurrently )
-     * @param taskType
-     * @param limit
-     */
-    public final void setRateLimit(String taskType, int limit) {
-        taskTagRateLimits.put(taskType, limit);
+    protected int getConcurrency(T task) {
+        return getConcurrency(task.getTagSet());
+    }
+
+    protected int getConcurrency(Set<String> tags) {
+        int concurrency = getConcurrency();
+        for(String tag: tags) {
+            int rateLimit = getRateLimit(tag);
+            if (rateLimit > 0 && rateLimit < concurrency) {
+                concurrency = rateLimit;
+            }
+        }
+        return concurrency;
+    }
+
+    protected String getRateLimitingTag(T task) {
+        return getRateLimitingTag(task.getTagSet());
+    }
+
+    protected String getRateLimitingTag(Set<String> tags) {
+        int concurrency = getConcurrency();
+        String out = null;
+        for(String tag: tags) {
+            int rateLimit = getRateLimit(tag);
+            if ((rateLimit > 0 && rateLimit < concurrency) || tag == null) {
+                concurrency = rateLimit;
+                out = tag;
+            }
+        }
+
+        return out;
     }
 
     /**
-     * Gets the max allowed concurrent tasks for a given task type. Returns -1 if no limit is specified.
+     * Limit the throughput of a specific tag ( e.g. how many tasks of the given tag that may be processed
+     * concurrently )
+     * @param tag
+     * @param limit
+     */
+    public final void setRateLimit(String tag, int limit) {
+        taskTagRateLimits.put(tag, limit);
+    }
+
+    /**
+     * Gets the max allowed concurrent tasks for a given tag. Returns -1 if no limit is specified.
      * @param tag
      * @return
      */
@@ -106,8 +141,8 @@ public class SmartQ<T extends Task,U>  {
         return -1;
     }
 
-    public final void setMaxRetries(String taskType, int limit) {
-        taskTagRetryLimits.put(taskType, limit);
+    public final void setMaxRetries(String tag, int limit) {
+        taskTagRetryLimits.put(tag, limit);
     }
 
     public final int getMaxRetries(Set<String> tags) {
@@ -123,16 +158,12 @@ public class SmartQ<T extends Task,U>  {
     }
 
     /**
-     * Get estimated time until queue no longer is blocked for the given task type.
-     * @param taskType
+     * Get estimated time until queue is completely done
+     * @param tag
      * @return
      */
-    public long getEstimatedTimeLeft(String taskType) throws InterruptedException {
-        final int concurrency = getConcurrency(taskType);
-
-        long typeTimeLeftTotal = getTypeETA(taskType);
-
-        return (long)Math.ceil((double)typeTimeLeftTotal / (double)concurrency);
+    public long getEstimatedTimeLeft(String tag) throws InterruptedException {
+        return new QueueEstimator(this).queueEnds(getStore().getPending(tag));
     }
 
 
@@ -141,54 +172,23 @@ public class SmartQ<T extends Task,U>  {
      * @return
      */
     public long getEstimatedTimeLeft() throws InterruptedException {
-
-        long timeLeft = 0;
-
-        final CountMap<String> typeETA = getTypeETA();
-
-        for(Map.Entry<String, Long> entry:typeETA.entrySet()) {
-            String taskType = entry.getKey();
-
-            int typeConcurrency = getConcurrency(taskType);
-
-            long typeTimeLeftTotal = entry.getValue();
-
-            timeLeft += (long)Math.ceil((double)typeTimeLeftTotal / (double)typeConcurrency);
-        }
-
-        return timeLeft;
-    }
-    
-    protected CountMap<String> getTypeETA() throws InterruptedException {
-        return getStore().isolatedChange(new Callable<CountMap<String>>() {
-            @Override
-            public CountMap<String> call() throws Exception {
-                final CountMap<String> typeETA = new CountMap<String>();
-                Iterator<T> running = getStore().getRunning();
-                while(running.hasNext()) {
-                    T task = running.next();
-
-                    for(String tag : task.getTags()) {
-                        typeETA.increment(tag, task.getEstimatedTimeLeft());
-                    }
-
-                }
-
-                for(String type: getStore().getTypes()) {
-                    typeETA.increment(type, getStore().getQueuedETA(type));
-                }
-                return typeETA;
-            }
-        });
+        return new QueueEstimator(this).queueEnds(getStore().getPending());
     }
 
+    /**
+     * Get estimated time until task can be executed
+     * @return
+     */
+    public long getEstimatedStartTime(T task) throws InterruptedException {
+        return new QueueEstimator(this).taskStarts(task);
+    }
 
-    protected long getTypeETA(String type) {
-        long eta = getStore().getQueuedETA(type);
-        for(T task: getRunningTasks(type)) {
-            eta += task.getEstimatedTimeLeft();
+    public long getEstimateForTaskType(String type) {
+        long average = typeEstimate.average(type);
+        if (average < 1) {
+            average = defaultTaskEstimate;
         }
-        return eta;
+        return average;
     }
 
     /**
@@ -218,6 +218,9 @@ public class SmartQ<T extends Task,U>  {
 
     
     public boolean submit(final T task) throws InterruptedException {
+        for(Map.Entry<String,Integer> entry : (Set<Map.Entry<String,Integer>>)task.getTags().entrySet()) {
+            setRateLimit(entry.getKey(), entry.getValue());
+        }
 
         getStore().isolatedChange(new Callable<T>() {
             @Override
@@ -288,7 +291,7 @@ public class SmartQ<T extends Task,U>  {
 
                 task.setState(Task.State.DONE);
                 task.setEnded(WatchProvider.currentTime());
-
+                typeEstimate.add(task.getType(), task.getActualDuration());
                 log.debug("Acked task");
                 getStore().remove(task);
                 getStore().signalChange();
@@ -315,7 +318,7 @@ public class SmartQ<T extends Task,U>  {
 
                 log.debug("Task marked as failed");
 
-                int maxRetries = getMaxRetries(task.getTags());
+                int maxRetries = getMaxRetries((Set<String>)task.getTagSet());
                 int attempts = task.getAttempts();
 
                 if (maxRetries > attempts) {
@@ -339,7 +342,7 @@ public class SmartQ<T extends Task,U>  {
         store.signalChange();
     }
     
-    public T acquire(final String taskType) throws InterruptedException {
+    public T acquire(final String tag) throws InterruptedException {
 
             interrupted = false;
             T selectedTask = null;
@@ -354,7 +357,7 @@ public class SmartQ<T extends Task,U>  {
 
                             log.debug(String.format("Queue queueSize: %s", getStore().queueSize()));
 
-                            Iterator<T> queued = taskType != null ? getStore().getQueued(taskType) : getStore().getQueued();
+                            Iterator<T> queued = tag != null ? getStore().getQueued(tag) : getStore().getQueued();
                             T taskLookup = null;
 
                             lookupLoop:
@@ -370,10 +373,10 @@ public class SmartQ<T extends Task,U>  {
                             }
 
                             if (taskLookup != null) {
-                                log.debug(String.format("Found task %s for type %s", taskLookup.getId(), taskType));
+                                log.debug(String.format("Found task %s for tag %s", taskLookup.getId(), tag));
                                 acquireTask(taskLookup);
                             } else {
-                                log.debug(String.format("Found no tasks for type %s", taskType));
+                                log.debug(String.format("Found no tasks for tag %s", tag));
                             }
 
                             return taskLookup;
@@ -404,7 +407,7 @@ public class SmartQ<T extends Task,U>  {
     }
 
     private boolean isRateLimited(CountMap<String> tasksRunning, T task) throws InterruptedException {
-        for(String tag : task.getTags()) {
+        for(String tag : (Set<String>)task.getTagSet()) {
             int limit = getRateLimit(tag);
 
             if (limit > 0) {
@@ -414,7 +417,7 @@ public class SmartQ<T extends Task,U>  {
                 long running = tasksRunning.get(tag);
 
                 if (running >= limit) {
-                    log.debug(String.format("Rate limited task type: %s (Running: %s, Limit: %s)",tag, running, limit));
+                    log.debug(String.format("Rate limited tag: %s (Running: %s, Limit: %s)",tag, running, limit));
                     return true;
                 }
             }
@@ -424,7 +427,7 @@ public class SmartQ<T extends Task,U>  {
 
     public int getRateLimit(T task) throws InterruptedException {
         int result = -1;
-        for(String tag : task.getTags()) {
+        for(String tag : (Set<String>)task.getTagSet()) {
             int limit = getRateLimit(tag);
 
             if (limit > 0 && (result == -1 || limit < result)) {
@@ -434,9 +437,9 @@ public class SmartQ<T extends Task,U>  {
         return result;
     }
 
-    public List<T> getRunningTasks(String type) {
+    public List<T> getRunningTasks(String tag) {
         List<T> out = new LinkedList<T>();
-        Iterator<T> running = getStore().getRunning(type);
+        Iterator<T> running = getStore().getRunning(tag);
         while(running.hasNext()) {
             out.add(running.next());
         }
@@ -506,5 +509,7 @@ public class SmartQ<T extends Task,U>  {
 
     }
 
-
+    public void setEstimateForTaskType(String test, long estimate) {
+        typeEstimate.set(test, estimate);
+    }
 }

@@ -1,6 +1,7 @@
 package com.vonhof.smartq;
 
 
+import org.junit.Ignore;
 import org.junit.Test;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -10,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+@Ignore
 public class RedisQueueTest extends SmartQTest {
 
 

@@ -58,7 +58,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
 
     public PostgresTaskStore(Class<T> taskClass) throws SQLException {
-        this(taskClass, "jdbc:postgresql://localhost/smartq", "postgres", "");
+        this(taskClass, "jdbc:postgresql://localhost/smartq", "henrik", "");
     }
 
     public PostgresTaskStore(Class<T> taskClass, String url, String username, String password) throws SQLException {
@@ -113,14 +113,14 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         try {
             task.setState(State.PENDING);
             client().update(
-                String.format("INSERT INTO \"%s\" (id, content, state, priority, estimate) VALUES (?, ?, ?, ?, ?)", tableName),
+                    String.format("INSERT INTO \"%s\" (id, content, state, priority, type) VALUES (?, ?, ?, ?, ?)", tableName),
                     task.getId(),
                     documentSerializer.serialize(task).getBytes("UTF-8"),
                     STATE_QUEUED,
                     task.getPriority(),
-                    task.getEstimatedDuration()
-                    );
-            for(String tag :  task.getTags()) {
+                    task.getType()
+            );
+            for (String tag : (Set<String>) task.getTags().keySet()) {
                 if (log.isTraceEnabled()) {
                     log.trace(String.format("Tagging task %s with tags: %s", task.getId(), task.getTags()));
                 }
@@ -148,7 +148,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         try {
             task.setState(State.RUNNING);
             client().update(
-                String.format("UPDATE \"%s\" SET content = ?,state = ? WHERE id = ?", tableName),
+                    String.format("UPDATE \"%s\" SET content = ?,state = ? WHERE id = ?", tableName),
                     documentSerializer.serialize(task).getBytes("UTF-8"),
                     STATE_RUNNING,
                     task.getId());
@@ -179,6 +179,16 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public Iterator<T> getQueued() {
         return client().getList(STATE_QUEUED);
+    }
+
+    @Override
+    public Iterator<T> getPending() {
+        return client().getPending();
+    }
+
+    @Override
+    public Iterator<T> getPending(String tag) {
+        return client().getPending(tag);
     }
 
     @Override
@@ -237,7 +247,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public Set<String> getTypes() throws InterruptedException {
+    public Set<String> getTags() throws InterruptedException {
         return isolatedChange(new Callable<Set<String>>() {
             @Override
             public Set<String> call() throws Exception {
@@ -249,16 +259,6 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             }
         });
 
-    }
-
-    @Override
-    public long getQueuedETA(String type) {
-        return client().sum(STATE_QUEUED, type);
-    }
-
-    @Override
-    public long getQueuedETA() {
-        return client().sum(STATE_QUEUED);
     }
 
     @Override
@@ -280,7 +280,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             if (isolationStartedInThisCall) {
                 try {
                     client().connection.rollback();
-                } catch (SQLException e1) {}
+                } catch (SQLException e1) {
+                }
             }
             throw new RuntimeException(e);
         } finally {
@@ -288,7 +289,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 isolated = false;
                 try {
                     client().connection.setAutoCommit(true);
-                } catch (SQLException e) {}
+                } catch (SQLException e) {
+                }
             }
         }
     }
@@ -310,7 +312,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     public void createTable() throws IOException, SQLException {
         try {
-            client().query(String.format("select 1 from \"%s\" limit 1",tableName));
+            client().query(String.format("select 1 from \"%s\" limit 1", tableName));
             return;
         } catch (SQLException ex) {
             //Do nothing - above is just a check if the table exists
@@ -321,8 +323,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     public void dropTable() throws SQLException {
-        client().update(String.format("DROP TABLE \"%s_tags\"",tableName));
-        client().update(String.format("DROP TABLE \"%s\"",tableName));
+        client().update(String.format("DROP TABLE \"%s_tags\"", tableName));
+        client().update(String.format("DROP TABLE \"%s\"", tableName));
     }
 
     public void close() throws SQLException {
@@ -349,24 +351,24 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         }
 
         private void lockTable() throws SQLException {
-            execute(String.format("LOCK TABLE \"%s\" IN ACCESS EXCLUSIVE MODE",tableName));
+            execute(String.format("LOCK TABLE \"%s\" IN ACCESS EXCLUSIVE MODE", tableName));
             log.debug("Locking table");
         }
 
-        private List<Map<String,Object>> query(String sql, Object ... args) throws SQLException {
+        private List<Map<String, Object>> query(String sql, Object... args) throws SQLException {
             try {
                 PreparedStatement stmt = stmt(sql, args);
 
                 ResultSet result = stmt.executeQuery();
 
-                List<Map<String,Object>> out = new ArrayList<Map<String, Object>>();
+                List<Map<String, Object>> out = new ArrayList<Map<String, Object>>();
                 while (result.next()) {
-                    Map<String,Object> row = new HashMap<String, Object>();
+                    Map<String, Object> row = new HashMap<String, Object>();
                     ResultSetMetaData md = stmt.getMetaData();
-                    for(int j = 0; j < md.getColumnCount(); j++) {
+                    for (int j = 0; j < md.getColumnCount(); j++) {
                         String name = md.getColumnName(j + 1);
                         Object value = result.getObject(j + 1);
-                        row.put(name,value);
+                        row.put(name, value);
                     }
                     out.add(row);
                 }
@@ -374,12 +376,12 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 return out;
 
             } catch (SQLException e) {
-                log.debug("SQL: "+ sql,e);
+                log.debug("SQL: " + sql, e);
                 throw e;
             }
         }
 
-        private T queryOne(String sql, Object ... args) throws SQLException {
+        private T queryOne(String sql, Object... args) throws SQLException {
             List<T> rows = queryAll(sql, args);
             if (rows.isEmpty()) {
                 return null;
@@ -405,47 +407,47 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 return out;
             }
 
-            for(Map<String,Object> row : rows) {
-                byte[] content = (byte[]) rows.get(0).get("content");
+            for (Map<String, Object> row : rows) {
+                byte[] content = (byte[]) row.get("content");
 
                 try {
                     T task = documentSerializer.deserialize(new String(content, "UTF-8"), taskClass);
                     out.add(task);
                 } catch (IOException e) {
-                    log.warn(String.format("Failed to deserialize task: %s",row.get("id")), e);
+                    log.warn(String.format("Failed to deserialize task: %s", row.get("id")), e);
                 }
             }
 
             return out;
         }
 
-        private void execute(String sql, Object ... args) throws SQLException {
+        private void execute(String sql, Object... args) throws SQLException {
             try {
                 PreparedStatement stmt = stmt(sql, args);
                 stmt.execute();
                 stmt.close();
             } catch (SQLException e) {
-                log.debug("SQL: "+ sql,e);
+                log.debug("SQL: " + sql, e);
                 throw e;
             }
         }
 
-        private void update(String sql, Object ... args) throws SQLException {
+        private void update(String sql, Object... args) throws SQLException {
             try {
                 PreparedStatement stmt = stmt(sql, args);
                 stmt.executeUpdate();
                 stmt.close();
             } catch (SQLException e) {
-                log.debug("SQL: "+ sql,e);
+                log.debug("SQL: " + sql, e);
                 throw e;
             }
         }
 
-        private PreparedStatement stmt(String sql, Object ... args) {
+        private PreparedStatement stmt(String sql, Object... args) {
             try {
                 PreparedStatement stmt = connection.prepareStatement(sql);
                 int i = 1;
-                for(Object arg : args) {
+                for (Object arg : args) {
                     stmt.setObject(i, arg);
                     i++;
                 }
@@ -464,16 +466,58 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 if (type != null && !type.isEmpty()) {
                     return client()
                             .queryAll(
-                                String.format("SELECT * FROM \"%1$s\" task, \"%1$s_tags\" tag " +
-                                        "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
-                                        "ORDER BY task.priority DESC LIMIT 100", tableName),state,type
+                                    String.format("SELECT task.id, task.content " +
+                                            "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                                            "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
+                                            "GROUP BY task.id " +
+                                            "ORDER BY task.priority DESC, task.created DESC, task.order ASC ", tableName), state, type
                             ).iterator();
                 } else {
                     return client()
                             .queryAll(
-                                String.format("SELECT * FROM \"%s\" WHERE state = ? ORDER BY priority DESC LIMIT 100", tableName), state
+                                    String.format("SELECT task.id, task.content " +
+                                            "FROM \"%s\" task, \"%1$s_tags\" tag " +
+                                            "WHERE task.state = ? " +
+                                            "GROUP BY task.id " +
+                                            "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName), state
                             ).iterator();
                 }
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        public Iterator<T> getPending() {
+            return getPending(null);
+        }
+
+        public Iterator<T> getPending(String tag) {
+            try {
+                if (tag != null && !tag.isEmpty()) {
+                    return client()
+                            .queryAll(
+                                    String.format("SELECT task.id, task.content " +
+                                            "FROM \"%s\" task, \"%1$s_tags\" tag " +
+                                            "WHERE state IN (?,?) AND tag.id = task.id and tag.tag = ? " +
+                                            "GROUP BY task.id " +
+                                            "ORDER BY task.state DESC, task.priority DESC, task.created DESC, task.order ASC ", tableName),
+                                    STATE_RUNNING,
+                                    STATE_QUEUED,
+                                    tag
+                            ).iterator();
+                } else {
+                    return client()
+                            .queryAll(
+                                    String.format("SELECT task.id, task.content " +
+                                            "FROM \"%s\" task " +
+                                            "WHERE task.state IN (?,?) " +
+                                            "GROUP BY task.id " +
+                                            "ORDER BY task.state DESC, task.priority DESC, task.created DESC, task.order ASC ", tableName),
+                                    STATE_RUNNING,
+                                    STATE_QUEUED
+                            ).iterator();
+                }
+
             } catch (SQLException e) {
                 throw new RuntimeException(e);
             }
@@ -483,12 +527,14 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             return count(state, null);
         }
 
-        public long count(int state, String type) {
+        public long count(int state, String tag) {
+
+
             try {
-                if (type != null && !type.isEmpty()) {
+                if (tag != null && !tag.isEmpty()) {
                     return client().queryForLong(
                             String.format("SELECT count(task.*) as count FROM \"%1$s\" task, \"%1$s_tags\" tag " +
-                                    "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? ", tableName), state, type);
+                                    "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? ", tableName), state, tag);
                 } else {
                     return client().queryForLong(
                             String.format("SELECT count(*) as count FROM \"%s\" WHERE state = ?", tableName), state);
@@ -498,19 +544,19 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             }
         }
 
-        public long sum(int state) {
-            return sum(state, null);
+        public long countType(int state) {
+            return countType(state, null);
         }
 
-        public long sum(int state, String type) {
+        public long countType(int state, String type) {
+
             try {
                 if (type != null && !type.isEmpty()) {
-                    return client().queryForLong(String.format("SELECT sum(estimate)  FROM \"%1$s\" task, \"%1$s_tags\" tag " +
-                            "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? ", tableName),
-                            state,type);
+                    return client().queryForLong(String.format("SELECT count(*)  FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                            "WHERE task.state = ? AND task.type = ? ", tableName),
+                            state, type);
                 } else {
-                    return client().queryForLong(String.format("SELECT sum(estimate) from \"%s\" WHERE state = ?", tableName),
-                            state,type);
+                    return client().queryForLong(String.format("SELECT count(*) from \"%s\" WHERE state = ?", tableName), state);
                 }
             } catch (SQLException e) {
                 throw new RuntimeException(e);
@@ -518,12 +564,22 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         }
 
 
+        private CountMap<String> queryForCountMap(String sql, Object... args) throws SQLException {
+            PreparedStatement stmt = stmt(sql, args);
+            ResultSet result = stmt.executeQuery();
+            CountMap<String> out = new CountMap<String>();
+            while (result.next()) {
+                out.increment(result.getString(1), result.getInt(2));
+            }
+            return out;
+        }
 
-        public Set<String> queryStringSet(String sql, Object ... args) throws SQLException {
+
+        public Set<String> queryStringSet(String sql, Object... args) throws SQLException {
             PreparedStatement stmt = stmt(sql, args);
             ResultSet result = stmt.executeQuery();
             Set<String> out = new HashSet<String>();
-            while(result.next()) {
+            while (result.next()) {
                 out.add(result.getString(1));
             }
             return out;
@@ -534,7 +590,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         }
 
         public void pgNotify() throws SQLException {
-            execute(String.format("NOTIFY \"%s_event\"",tableName));
+            execute(String.format("NOTIFY \"%s_event\"", tableName));
         }
 
         public boolean hasNotifications() throws SQLException {
@@ -561,7 +617,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 throw new RuntimeException(e);
             }
 
-            while(true) {
+            while (true) {
                 try {
                     if (client.hasNotifications()) {
                         log.trace("PG returned notifications");

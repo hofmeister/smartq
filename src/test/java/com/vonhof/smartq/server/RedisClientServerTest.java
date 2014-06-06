@@ -4,11 +4,13 @@ package com.vonhof.smartq.server;
 import com.vonhof.smartq.RedisTaskStore;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.TaskStore;
+import org.junit.Ignore;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.UUID;
 
+@Ignore
 public class RedisClientServerTest extends ClientServerTest {
 
     @Override

@@ -5,6 +5,7 @@ import com.vonhof.smartq.Task.State;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.Stack;
 
 import static org.junit.Assert.assertEquals;
@@ -20,32 +21,32 @@ public class SmartQTest {
         return new MemoryTaskStore<Task>();
     }
 
-    protected SmartQ<Task,DefaultTaskResult> makeQueue() {
+    protected SmartQ<Task, DefaultTaskResult> makeQueue() {
         return new SmartQ<Task, DefaultTaskResult>(makeStore());
     }
 
-    protected SmartQ<Task,DefaultTaskResult> makeNode(TaskStore<Task> store) {
+    protected SmartQ<Task, DefaultTaskResult> makeNode(TaskStore<Task> store) {
         return new SmartQ<Task, DefaultTaskResult>(store);
     }
 
     @Test
     public void tasks_can_be_added_and_acquired() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
         queue.submit(task);
 
-        assertEquals(1,queue.queueSize());
+        assertEquals(1, queue.queueSize());
 
         assertNotNull(queue.acquire());
 
-        assertEquals(0,queue.queueSize());
+        assertEquals(0, queue.queueSize());
     }
 
     @Test
     public void tasks_can_be_prioritized() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         Task notImportantTask1 = new Task("test").withPriority(1);
         Task notImportantTask2 = new Task("test").withPriority(1);
@@ -62,59 +63,59 @@ public class SmartQTest {
         queue.submit(notImportantTask5);
 
 
-        assertEquals(6,queue.queueSize());
+        assertEquals(6, queue.queueSize());
 
-        assertEquals("Task with highest prio comes first",10,queue.acquire().getPriority());
+        assertEquals("Task with highest prio comes first", 10, queue.acquire().getPriority());
     }
 
     @Test
     public void tasks_can_be_cancelled() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
         queue.submit(task);
 
-        assertEquals(queue.queueSize(),1);
+        assertEquals(queue.queueSize(), 1);
 
         queue.cancel(task);
 
-        assertEquals(queue.queueSize(),0);
+        assertEquals(queue.queueSize(), 0);
 
-        assertEquals(task.getState(),Task.State.PENDING);
+        assertEquals(task.getState(), Task.State.PENDING);
     }
 
     @Test
     public void tasks_can_fail() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
         queue.submit(task);
 
-        assertEquals(queue.queueSize(),1);
+        assertEquals(queue.queueSize(), 1);
 
         queue.failed(task.getId());
 
-        assertEquals(queue.queueSize(),0);
+        assertEquals(queue.queueSize(), 0);
 
         assertEquals(queue.getStore().get(task.getId()).getState(), State.ERROR);
     }
 
     @Test
     public void tasks_can_retry_if_failed() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
         queue.setMaxRetries("test", 2);
         queue.submit(task);
 
-        assertEquals(queue.queueSize(),1);
+        assertEquals(queue.queueSize(), 1);
 
         queue.failed(task.getId());
 
-        assertEquals(queue.queueSize(),1);
+        assertEquals(queue.queueSize(), 1);
 
         assertEquals(queue.getStore().get(task.getId()).getState(), State.PENDING);
     }
@@ -122,29 +123,27 @@ public class SmartQTest {
 
     @Test
     public void tasks_can_be_rescheduled() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
         queue.submit(task);
 
-        assertEquals(queue.queueSize(),1);
+        assertEquals(queue.queueSize(), 1);
 
         queue.cancel(task, true);
 
-        assertEquals(queue.queueSize(),1);
+        assertEquals(queue.queueSize(), 1);
 
         task = queue.acquire();
 
-        assertEquals(task.getState(),Task.State.RUNNING);
+        assertEquals(task.getState(), Task.State.RUNNING);
     }
 
 
     @Test
     public void tasks_can_be_rate_limited_by_type() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
-
-        queue.setRateLimit("test", 2);
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("test");
         Task task2 = new Task("test");
@@ -156,17 +155,19 @@ public class SmartQTest {
         queue.submit(task3);
         queue.submit(task4);
 
-        assertEquals(queue.queueSize(),4);
+        queue.setRateLimit("test", 2);
+
+        assertEquals(queue.queueSize(), 4);
 
         Task running1 = queue.acquire();
         Task running2 = queue.acquire();
 
-        assertEquals(queue.queueSize(),2);
+        assertEquals(queue.queueSize(), 2);
 
         ThreadedRunner runner = new ThreadedRunner(queue);
         runner.start();
 
-        assertFalse("Thread is waiting for ack",runner.isDone());
+        assertFalse("Thread is waiting for ack", runner.isDone());
 
         queue.acknowledge(running1.getId());
 
@@ -177,7 +178,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_with_different_type_is_not_rate_limited() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         queue.setRateLimit("test", 2);
 
@@ -191,14 +192,14 @@ public class SmartQTest {
         queue.submit(task3);
         queue.submit(task4);
 
-        assertEquals(queue.queueSize(),4);
+        assertEquals(queue.queueSize(), 4);
 
         Task running1 = queue.acquire();
         Task running2 = queue.acquire();
         Task running3 = queue.acquire();
 
-        assertEquals(queue.queueSize(),1);
-        assertEquals("test2",running3.getTags().first());
+        assertEquals(queue.queueSize(), 1);
+        assertEquals("test2", running3.getTagSet().iterator().next());
 
         ThreadedRunner runner = new ThreadedRunner(queue);
         runner.start();
@@ -214,7 +215,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_with_multiple_rate_limited_tags_gets_the_most_restricted() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
         queue.setRateLimit("test", 2);
         queue.setRateLimit("test2", 4);
@@ -230,79 +231,128 @@ public class SmartQTest {
 
     @Test
     public void can_do_simple_estimations() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
-        Task task1 = new Task("a",1000);
-        Task task2 = new Task("a",1000);
-        Task task3 = new Task("b",2000);
-        Task task4 = new Task("b",2000);
+        Task task1 = new Task("a");
+        Task task2 = new Task("a");
+        Task task3 = new Task("b");
+        Task task4 = new Task("b");
 
         queue.submit(task1);
         queue.submit(task2);
         queue.submit(task3);
         queue.submit(task4);
+        queue.setEstimateForTaskType("a", 1000);
+        queue.setEstimateForTaskType("b", 2000);
 
-        assertEquals(queue.queueSize(),4);
+        assertEquals(queue.queueSize(), 4);
 
-        assertEquals("ETA is correct",6000L,queue.getEstimatedTimeLeft());
+        assertEquals("ETA is correct", 6000L, queue.getEstimatedTimeLeft());
 
-        assertEquals("ETA is correct for type",2000L,queue.getEstimatedTimeLeft("a"));
+        assertEquals("ETA is correct for type", 2000L, queue.getEstimatedTimeLeft("a"));
 
-        assertEquals("ETA is correct for type",4000L,queue.getEstimatedTimeLeft("b"));
+        assertEquals("ETA is correct for type", 4000L, queue.getEstimatedTimeLeft("b"));
     }
 
     @Test
     public void can_do_subscriber_based_estimations() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
-        Task task1 = new Task("a",1000);
-        Task task2 = new Task("a",1000);
-        Task task3 = new Task("b",2000);
-        Task task4 = new Task("b",2000);
+        Task task1 = new Task("a");
+        Task task2 = new Task("a");
+        Task task3 = new Task("b");
+        Task task4 = new Task("b");
 
         queue.submit(task1);
         queue.submit(task2);
         queue.submit(task3);
         queue.submit(task4);
+        queue.setEstimateForTaskType("a", 1000);
+        queue.setEstimateForTaskType("b", 2000);
 
         queue.setSubscribers(2);
 
         assertEquals(queue.queueSize(), 4);
 
-        assertEquals("ETA is correct",3000L,queue.getEstimatedTimeLeft());
+        assertEquals("ETA is correct", 3000L, queue.getEstimatedTimeLeft());
 
-        assertEquals("ETA is correct for type",1000L,queue.getEstimatedTimeLeft("a"));
+        assertEquals("ETA is correct for type", 1000L, queue.getEstimatedTimeLeft("a"));
 
-        assertEquals("ETA is correct for type",2000L,queue.getEstimatedTimeLeft("b"));
+        assertEquals("ETA is correct for type", 2000L, queue.getEstimatedTimeLeft("b"));
     }
 
     @Test
     public void can_get_running_tasks_by_type() throws InterruptedException {
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
-        Task task1 = new Task("a",1000);
-        Task task2 = new Task("a",1000);
-        Task task3 = new Task("b",2000);
-        Task task4 = new Task("b",2000);
+        Task task1 = new Task("a");
+        Task task2 = new Task("a");
+        Task task3 = new Task("b");
+        Task task4 = new Task("b");
 
         queue.submit(task1);
         queue.submit(task2);
         queue.submit(task3);
         queue.submit(task4);
 
+        queue.setEstimateForTaskType("a", 1000);
+        queue.setEstimateForTaskType("b", 2000);
+
         Task a = queue.acquire("a");
 
-        assertFalse("No running b tasks",queue.getStore().getRunning("b").hasNext());
+        assertFalse("No running b tasks", queue.getStore().getRunning("b").hasNext());
 
-        assertTrue("Can get running A tasks",queue.getStore().getRunning("a").hasNext());
+        assertTrue("Can get running A tasks", queue.getStore().getRunning("a").hasNext());
 
-        assertEquals("Can get running A task count",1, queue.getStore().runningCount("a"));
+        assertEquals("Can get running A task count", 1, queue.getStore().runningCount("a"));
 
         queue.acknowledge(a.getId());
 
-        assertFalse("No more running A tasks",queue.getStore().getRunning("a").hasNext());
+        assertFalse("No more running A tasks", queue.getStore().getRunning("a").hasNext());
 
-        assertEquals("Can get new running A task count",0, queue.getStore().runningCount("a"));
+        assertEquals("Can get new running A task count", 0, queue.getStore().runningCount("a"));
+    }
+
+
+    @Test
+    public void estimates_are_updated_as_tasks_are_executed() throws InterruptedException {
+
+        WatchProvider.currentTime(0); //Override time - to have better control
+
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+
+        Task task1 = new Task("a");
+        Task task2 = new Task("a");
+        Task task3 = new Task("a");
+        Task task4 = new Task("a");
+        Task task5 = new Task("a");
+        Task task6 = new Task("a");
+
+        queue.submit(task1);
+        queue.submit(task2);
+        queue.submit(task3);
+        queue.submit(task4);
+        queue.submit(task5);
+        queue.submit(task6);
+
+        queue.setRateLimit("a", 1);
+        queue.setSubscribers(2);
+        queue.setEstimateForTaskType("a", 1000);
+
+        assertEquals("Estimate is as expected", 1000L, queue.getEstimateForTaskType("a"));
+
+        Task a = queue.acquire("a");
+        WatchProvider.appendTime(500); //Simulate 500 ms passing
+        queue.acknowledge(a.getId());
+
+        assertEquals("Estimate shows updated time", 750L, queue.getEstimateForTaskType("a"));
+
+        Task a2 = queue.acquire("a");
+        WatchProvider.appendTime(500); //Simulate 500 ms passing
+        queue.acknowledge(a2.getId());
+
+        assertEquals("Estimate shows updated time", 666L, queue.getEstimateForTaskType("a"));
+
     }
 
 
@@ -311,29 +361,30 @@ public class SmartQTest {
 
         WatchProvider.currentTime(0); //Override time - to have better control
 
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
 
-        queue.setRateLimit("a", 1);
-
-        Task task1 = new Task("a",1000);
-        Task task2 = new Task("b",2000);
-        Task task3 = new Task("a",1000);
-        Task task4 = new Task("b",2000);
+        Task task1 = new Task("a");
+        Task task2 = new Task("b");
+        Task task3 = new Task("a");
+        Task task4 = new Task("b");
 
         queue.submit(task1);
         queue.submit(task2);
         queue.submit(task3);
         queue.submit(task4);
+        queue.setEstimateForTaskType("a", 1000);
+        queue.setEstimateForTaskType("b", 2000);
 
+        queue.setRateLimit("a", 1);
         queue.setSubscribers(2);
 
-        assertEquals(queue.queueSize(),4);
+        assertEquals(queue.queueSize(), 4);
 
-        assertEquals("ETA is correct",4000L,queue.getEstimatedTimeLeft());
+        assertEquals("ETA is correct", 4000L, queue.getEstimatedTimeLeft());
 
-        assertEquals("ETA is correct for type",2000L,queue.getEstimatedTimeLeft("a"));
+        assertEquals("ETA is correct for type", 2000L, queue.getEstimatedTimeLeft("a"));
 
-        assertEquals("ETA is correct for type",2000L,queue.getEstimatedTimeLeft("b"));
+        assertEquals("ETA is correct for type", 2000L, queue.getEstimatedTimeLeft("b"));
 
         Task a = queue.acquire("a");
 
@@ -341,7 +392,57 @@ public class SmartQTest {
 
         assertEquals("ETA accounts for time running", 3500L, queue.getEstimatedTimeLeft());
 
+        WatchProvider.appendTime(500); //Simulate 500 ms passing
         queue.acknowledge(a.getId());
+
+        assertEquals(1000L, queue.getEstimateForTaskType("a"));
+
+        assertEquals("ETA is updated when task is ack'ed", 3000L, queue.getEstimatedTimeLeft());
+
+    }
+
+    @Test
+    public void can_do_rate_limiting_from_task_configuration() throws InterruptedException {
+
+        WatchProvider.currentTime(0); //Override time - to have better control
+
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+
+        Task task1 = new Task("a");
+        task1.addRateLimit("sometag",1);
+        Task task3 = new Task("a");
+        task3.addRateLimit("sometag",1);
+
+        Task task2 = new Task("b");
+        Task task4 = new Task("b");
+
+        queue.submit(task1);
+        queue.submit(task2);
+        queue.submit(task3);
+        queue.submit(task4);
+
+        queue.setEstimateForTaskType("a", 1000);
+        queue.setEstimateForTaskType("b", 2000);
+        queue.setSubscribers(2);
+
+        assertEquals(queue.queueSize(), 4);
+
+        assertEquals("ETA is correct", 4000L, queue.getEstimatedTimeLeft());
+
+        assertEquals("ETA is correct for type", 2000L, queue.getEstimatedTimeLeft("a"));
+
+        assertEquals("ETA is correct for type", 2000L, queue.getEstimatedTimeLeft("b"));
+
+        Task a = queue.acquire("a");
+
+        WatchProvider.appendTime(500); //Simulate 500 ms passing
+
+        assertEquals("ETA accounts for time running", 3500L, queue.getEstimatedTimeLeft());
+
+        WatchProvider.appendTime(500); //Simulate 500 ms passing
+        queue.acknowledge(a.getId());
+
+        assertEquals(1000L, queue.getEstimateForTaskType("a"));
 
         assertEquals("ETA is updated when task is ack'ed", 3000L, queue.getEstimatedTimeLeft());
 
@@ -353,9 +454,9 @@ public class SmartQTest {
         double before = System.currentTimeMillis();
         double amount = 10000;
 
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
-        for(int i = 0; i < amount ; i++) {
-            queue.submit(new Task("test", 1000));
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        for (int i = 0; i < amount; i++) {
+            queue.submit(new Task("test"));
         }
 
         double secs = (System.currentTimeMillis() - before) / 1000;
@@ -370,13 +471,13 @@ public class SmartQTest {
     @Ignore //Unignore these to test speed rates
     public void can_acquire_tasks_at_high_rates() throws InterruptedException {
         double amount = 10000;
-        SmartQ<Task,DefaultTaskResult> queue = makeQueue();
-        for(int i = 0; i < amount ; i++) {
-            queue.submit(new Task("test", 1000));
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        for (int i = 0; i < amount; i++) {
+            queue.submit(new Task("test"));
         }
 
         double before = System.currentTimeMillis();
-        for(int i = 0; i < amount ; i++) {
+        for (int i = 0; i < amount; i++) {
             Task acquire = queue.acquire();
             queue.acknowledge(acquire.getId());
         }
@@ -394,27 +495,30 @@ public class SmartQTest {
     public void queue_handles_concurrent_acquire() throws InterruptedException {
         final TaskStore<Task> store = makeStore();
 
-        SmartQ<Task,DefaultTaskResult> queue1 = makeNode(store);
-        SmartQ<Task,DefaultTaskResult> queue2 = makeNode(store);
-        SmartQ<Task,DefaultTaskResult> queue3 = makeNode(store);
+        SmartQ<Task, DefaultTaskResult> queue1 = makeNode(store);
+        SmartQ<Task, DefaultTaskResult> queue2 = makeNode(store);
+        SmartQ<Task, DefaultTaskResult> queue3 = makeNode(store);
 
-        queue1.setRateLimit("test", 1);
-        queue2.setRateLimit("test", 1);
-        queue3.setRateLimit("test", 1);
-
-        Task task1 = new Task("test",1000);
-        Task task2 = new Task("test",2000);
-        Task task3 = new Task("test",1000);
-        Task task4 = new Task("test",2000);
+        Task task1 = new Task("test");
+        Task task2 = new Task("test");
+        Task task3 = new Task("test");
+        Task task4 = new Task("test");
 
         queue1.submit(task1);
         queue1.submit(task2);
         queue1.submit(task3);
         queue1.submit(task4);
 
-        assertEquals(queue1.queueSize(),4);
-        assertEquals(queue2.queueSize(),4);
-        assertEquals(queue3.queueSize(),4);
+        queue1.setEstimateForTaskType("test", 2000);
+        queue1.setRateLimit("test", 1);
+        queue2.setRateLimit("test", 1);
+        queue3.setRateLimit("test", 1);
+
+        assertEquals(queue1.queueSize(), 4);
+        assertEquals(queue2.queueSize(), 4);
+        assertEquals(queue3.queueSize(), 4);
+
+
 
         long queueSize = queue1.queueSize();
 
@@ -425,18 +529,18 @@ public class SmartQTest {
         subscribers.add(new ThreadedSubscriber(queue1, "queue4"));
 
         //Start all subscribers
-        for(ThreadedSubscriber subscriber : subscribers) {
+        for (ThreadedSubscriber subscriber : subscribers) {
             subscriber.start();
         }
 
         int maxRetries = 10;
         int retries = 0;
 
-        while(!subscribers.isEmpty()) {
+        while (!subscribers.isEmpty()) {
 
             ThreadedSubscriber subscriberWithAcquire = null;
 
-            for(ThreadedSubscriber subscriber : subscribers) {
+            for (ThreadedSubscriber subscriber : subscribers) {
                 if (subscriber.hasAcquired()) {
                     subscriberWithAcquire = subscriber;
                     break;
@@ -456,7 +560,7 @@ public class SmartQTest {
 
             subscribers.remove(subscriberWithAcquire);
 
-            for(ThreadedSubscriber subscriber : subscribers) {
+            for (ThreadedSubscriber subscriber : subscribers) {
                 assertFalse("Other subscriber is waiting for ack", subscriber.hasAcquired());
             }
 
@@ -488,6 +592,243 @@ public class SmartQTest {
         assertTrue("Locker is done", locker.isDone());
     }
 
+    @Test
+    public void can_estimate_simple_queues() throws InterruptedException {
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        Task a  = new Task("test");
+        Task b  = new Task("test");
+        Task c  = new Task("test");
+        Task d  = new Task("test");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+
+        queue.setSubscribers(2);
+        queue.setRateLimit("test", 2);
+        queue.setEstimateForTaskType("test", 1000L);
+
+        QueueEstimator estimator = new QueueEstimator(queue);
+
+        assertEquals(2000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+
+        queue.setRateLimit("test", 1);
+
+        assertEquals(4000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+
+        queue.setRateLimit("test", -1);
+        queue.setSubscribers(10);
+
+        assertEquals(1000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+    }
+
+
+    @Test
+    public void can_estimate_when_a_task_begins_in_simple_queues() throws InterruptedException {
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        Task a  = new Task("test");
+        Task b  = new Task("test");
+        Task c  = new Task("test");
+        Task d  = new Task("test");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+
+        queue.setSubscribers(2);
+        queue.setRateLimit("test", 2);
+        queue.setEstimateForTaskType("test", 1000L);
+
+        QueueEstimator estimator = new QueueEstimator(queue);
+
+        assertEquals(0L, estimator.taskStarts(b));
+        assertEquals(1000L, estimator.taskStarts(d));
+
+        queue.setSubscribers(1);
+
+        assertEquals(1000L, estimator.taskStarts(b));
+        assertEquals(3000L, estimator.taskStarts(d));
+
+
+        queue.setSubscribers(10);
+        queue.setRateLimit("test",-1);
+
+        assertEquals(0L, estimator.taskStarts(b));
+        assertEquals(0L, estimator.taskStarts(d));
+    }
+
+
+    @Test
+    public void can_estimate_queues_with_several_rate_limits() throws InterruptedException {
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        Task a  = new Task("rate1");
+        Task b  = new Task("rate1");
+        Task c  = new Task("rate2");
+        Task d  = new Task("rate2");
+        Task e  = new Task("rate3");
+        Task f  = new Task("rate3");
+        Task g  = new Task("rate3");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+        queue.submit(e);
+        queue.submit(f);
+        queue.submit(g);
+
+        queue.setSubscribers(6);
+        queue.setRateLimit("rate1", 1);
+        queue.setRateLimit("rate2", 2);
+        queue.setRateLimit("rate3", 3);
+
+        queue.setEstimateForTaskType("rate1", 1000L);
+        queue.setEstimateForTaskType("rate2", 1000L);
+        queue.setEstimateForTaskType("rate3", 1000L);
+
+        QueueEstimator estimator = new QueueEstimator(queue);
+
+        assertEquals(2000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,c,d,e,f,g,b), estimator.getLastExecutionOrder());
+
+        queue.setSubscribers(3);
+
+        assertEquals(3000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,c,d,b,e,f,g), estimator.getLastExecutionOrder());
+
+        queue.setSubscribers(2);
+
+        assertEquals(4000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,c,b,d,e,f,g), estimator.getLastExecutionOrder());
+    }
+
+
+    @Test
+    public void can_estimate_when_a_task_begins_in_a_queue_with_rate_limits() throws InterruptedException {
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        Task a  = new Task("rate1");
+        Task b  = new Task("rate1");
+        Task c  = new Task("rate2");
+        Task d  = new Task("rate2");
+        Task e  = new Task("rate3");
+        Task f  = new Task("rate3");
+        Task g  = new Task("rate3");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+        queue.submit(e);
+        queue.submit(f);
+        queue.submit(g);
+
+        queue.setSubscribers(6);
+        queue.setRateLimit("rate1", 1);
+        queue.setRateLimit("rate2", 2);
+        queue.setRateLimit("rate3", 3);
+
+        queue.setEstimateForTaskType("rate1", 1000L);
+        queue.setEstimateForTaskType("rate2", 1000L);
+        queue.setEstimateForTaskType("rate3", 1000L);
+
+        QueueEstimator estimator = new QueueEstimator(queue);
+
+        assertEquals(1000L, estimator.taskStarts(b));
+        assertEquals(Arrays.asList(a,c,d,e,f,g), estimator.getLastExecutionOrder());
+
+        queue.setSubscribers(3);
+
+        assertEquals(1000L, estimator.taskStarts(b));
+        assertEquals(Arrays.asList(a,c,d), estimator.getLastExecutionOrder());
+
+        queue.setSubscribers(2);
+
+        assertEquals(1000L, estimator.taskStarts(b));
+        assertEquals(Arrays.asList(a,c), estimator.getLastExecutionOrder());
+    }
+
+
+    @Test
+    public void can_estimate_queues_with_various_runtimes_and_rate_limits() throws InterruptedException {
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        Task a  = new Task("rate1");
+        Task b  = new Task("rate1");
+        Task c  = new Task("rate2");
+        Task d  = new Task("rate2");
+        Task e  = new Task("rate3");
+        Task f  = new Task("rate3");
+        Task g  = new Task("rate3");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+        queue.submit(e);
+        queue.submit(f);
+        queue.submit(g);
+
+        queue.setSubscribers(6);
+        queue.setRateLimit("rate1", 2);
+        queue.setRateLimit("rate2", 1);
+        queue.setRateLimit("rate3", 2);
+
+        queue.setEstimateForTaskType("rate1", 2000L);
+        queue.setEstimateForTaskType("rate2", 1000L);
+        queue.setEstimateForTaskType("rate3", 2500L);
+
+        QueueEstimator estimator = new QueueEstimator(queue);
+
+        assertEquals(5000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,b,c,e,f,d,g), estimator.getLastExecutionOrder());
+
+        queue.setSubscribers(3);
+        assertEquals(7000L, estimator.queueEnds());
+        assertEquals(Arrays.asList(a,b,c,d,e,f,g), estimator.getLastExecutionOrder());
+    }
+
+    @Test
+    public void can_estimate_when_a_task_starts_in_a_queue_with_various_runtimes_and_rate_limits() throws InterruptedException {
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        Task a  = new Task("rate1");
+        Task b  = new Task("rate1");
+        Task c  = new Task("rate2");
+        Task d  = new Task("rate2");
+        Task e  = new Task("rate3");
+        Task f  = new Task("rate3");
+        Task g  = new Task("rate3");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+        queue.submit(e);
+        queue.submit(f);
+        queue.submit(g);
+
+        queue.setSubscribers(6);
+        queue.setRateLimit("rate1", 2);
+        queue.setRateLimit("rate2", 1);
+        queue.setRateLimit("rate3", 2);
+
+        queue.setEstimateForTaskType("rate1", 2000L);
+        queue.setEstimateForTaskType("rate2", 1000L);
+        queue.setEstimateForTaskType("rate3", 2500L);
+
+        QueueEstimator estimator = new QueueEstimator(queue);
+
+        assertEquals(0L, estimator.taskStarts(e));
+        assertEquals(Arrays.asList(a,b,c), estimator.getLastExecutionOrder());
+
+        queue.setSubscribers(3);
+        assertEquals(2000L, estimator.taskStarts(e));
+        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+    }
+
     private static class ThreadedWaiter extends Thread {
         private final TaskStore<Task> store;
         private boolean done;
@@ -512,7 +853,7 @@ public class SmartQTest {
     }
 
     private static class ThreadedSubscriber extends Thread {
-        private final SmartQ<Task,DefaultTaskResult> queue;
+        private final SmartQ<Task, DefaultTaskResult> queue;
         private boolean done = false;
         private Task task;
 
@@ -541,7 +882,7 @@ public class SmartQTest {
     }
 
     private static class ThreadedRunner extends Thread {
-        private final SmartQ<Task,DefaultTaskResult> queue;
+        private final SmartQ<Task, DefaultTaskResult> queue;
         private boolean done;
 
         private ThreadedRunner(SmartQ<Task, DefaultTaskResult> queue) {
