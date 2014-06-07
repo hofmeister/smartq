@@ -107,7 +107,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                         client().update(
                                 String.format("INSERT INTO \"%s\" (id, content, state, priority, type) VALUES (?, ?, ?, ?, ?)", tableName),
                                 task.getId(),
-                                documentSerializer.serialize(tasks).getBytes("UTF-8"),
+                                documentSerializer.serialize(task).getBytes("UTF-8"),
                                 STATE_QUEUED,
                                 task.getPriority(),
                                 task.getType()

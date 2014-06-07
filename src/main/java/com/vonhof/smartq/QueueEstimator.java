@@ -11,10 +11,13 @@ public class QueueEstimator<T extends Task> {
     private final SmartQ queue;
     private final TaskStore store;
     private List<Task> runningTasks = new LinkedList<Task>();
-    private CountMap<String> runningTaskCount = new CountMap<String>();
     private List<Task> onHold = new LinkedList<Task>();
     private List<Task> executionOrder = new LinkedList<Task>();
     private long time = 0;
+
+    private FastCountMap runningTaskCount;
+    private FastCountMap concurrencyCache;
+    private FastCountMap estimates;
 
     public QueueEstimator(SmartQ queue) {
         this.queue = queue;
@@ -35,10 +38,14 @@ public class QueueEstimator<T extends Task> {
 
     public synchronized long taskStarts(Iterator<T> queued, Task task) throws InterruptedException {
         runningTasks.clear();
-        runningTaskCount.clear();
         onHold.clear();
         executionOrder.clear();
         time = 0;
+        int tagCount = store.getTags().size();
+        concurrencyCache = new FastCountMap(tagCount);
+        runningTaskCount = new FastCountMap(tagCount);
+        estimates = new FastCountMap(tagCount);
+
 
         if (queue.getSubscribers() < 1) {
             throw new RuntimeException("Can not estimate queue with no subscribers");
@@ -106,22 +113,22 @@ public class QueueEstimator<T extends Task> {
 
         long fastest = time; //Now
 
-        Map<String, Long> estimates = new HashMap<String, Long>();
-
         for(Task task : runningTasks) {
-            if (!estimates.containsKey(task.getType())) {
-                estimates.put(task.getType(), queue.getEstimateForTaskType(task.getType()));
+
+            long estimate = estimates.get(task.getType(), -1);
+            if (estimate < 0) {
+                estimate = estimates.set(task.getType(), queue.getEstimateForTaskType(task.getType()));
             }
 
-            long estimatedEndTime = task.getStarted() + estimates.get(task.getType());
+            long estimatedEndTime = task.getStarted() + estimate;
 
             if (fastest == time || estimatedEndTime < fastest) {
                 fastest = estimatedEndTime;
             }
         }
 
-        for(Task task : new ArrayList<Task>(runningTasks)) {
-            long estimatedEndTime = task.getStarted() + estimates.get(task.getType());
+        for(Task task : new LinkedList<>(runningTasks)) {
+            long estimatedEndTime = task.getStarted() + estimates.get(task.getType(),0);
 
             if (estimatedEndTime == fastest) {
                 markAsDone(task, estimatedEndTime);
@@ -185,9 +192,12 @@ public class QueueEstimator<T extends Task> {
         }
 
         for(String tag: (Set<String>)task.getTagSet()) {
-
-            long runningCount = runningTaskCount.get(tag);
-            int rateLimit = queue.getConcurrency(tag);
+            long runningCount = runningTaskCount.get(tag, 0);
+            long rateLimit = concurrencyCache.get(tag, -1);
+            if (rateLimit < 0) {
+                rateLimit = queue.getConcurrency(tag);
+                concurrencyCache.set(tag, rateLimit);
+            }
             if (rateLimit > 0 && runningCount >= rateLimit) {
                 return false;
             }

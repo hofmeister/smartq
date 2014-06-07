@@ -12,8 +12,8 @@ public class SmartQ<T extends Task,U>  {
 
     private static final Logger log = Logger.getLogger(SmartQ.class);
 
-    private final Map<String, Integer> taskTagRateLimits = new ConcurrentHashMap<String, Integer>();
-    private final Map<String, Integer> taskTagRetryLimits = new ConcurrentHashMap<String, Integer>();
+    private final Map<String, Integer> taskTagRateLimits = new HashMap<String, Integer>();
+    private final Map<String, Integer> taskTagRetryLimits = new HashMap<String, Integer>();
 
     private final TaskStore<T> store;
     private volatile int subscribers = 0;
@@ -130,8 +130,9 @@ public class SmartQ<T extends Task,U>  {
      * @return
      */
     public final int getRateLimit(String tag) {
-        if (taskTagRateLimits.containsKey(tag)) {
-            return taskTagRateLimits.get(tag);
+        Integer rateLimit = taskTagRateLimits.get(tag);
+        if (rateLimit != null) {
+            return rateLimit;
         }
         return getConcurrency();
     }

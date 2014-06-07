@@ -853,29 +853,41 @@ public class SmartQTest {
     @Test
     public void can_estimate_a_large_complex_queue() throws InterruptedException {
 
-        System.out.println("Grace period");
-        Thread.sleep(5000);
+        //System.out.println("Grace period");
+        //Thread.sleep(5000);
 
         System.out.println("Building task list");
-        int size = 20000;
         SmartQ<Task, DefaultTaskResult> queue = makeQueue();
         List<Task> tasks = new LinkedList();
-        for(int i = 0; i < size; i++) {
-            String type = "rate" + (1 + (i % 3));
-            Task t = new Task(type);
-            t.setPriority((int) Math.round(Math.random() * 5));
-            tasks.add(t);
+        final  int factor = 10;
+
+        int[] sizes = new int[]{22,53,11,5,82};
+        int totalSize = 0;
+
+        for(int size : sizes) {
+            size *= factor;
+            totalSize += size;
+            for(int i = 0; i < size; i++) {
+                String type = "rate" + (1 + (i % 5));
+                Task t = new Task(type);
+                t.setPriority((int) Math.round(Math.random() * 5));
+                tasks.add(t);
+            }
         }
 
         System.out.println("Setting up queue");
         queue.submit(tasks);
         queue.setRateLimit("rate1", 1);
         queue.setRateLimit("rate2", 2);
-        queue.setRateLimit("rate3", 2);
+        queue.setRateLimit("rate3", 3);
+        queue.setRateLimit("rate4", 4);
+        queue.setRateLimit("rate5", 5);
 
-        queue.setEstimateForTaskType("rate1", 2000L);
-        queue.setEstimateForTaskType("rate2", 1000L);
-        queue.setEstimateForTaskType("rate3", 2500L);
+        queue.setEstimateForTaskType("rate1", 3113L);
+        queue.setEstimateForTaskType("rate2", 1331L);
+        queue.setEstimateForTaskType("rate3", 23210L);
+        queue.setEstimateForTaskType("rate4", 321L);
+        queue.setEstimateForTaskType("rate5", 5122L);
         queue.setSubscribers(99);
 
         System.out.println("Getting task list");
@@ -888,8 +900,8 @@ public class SmartQTest {
         long eta = estimator.queueEnds(pending);
         long timeTaken = System.currentTimeMillis() - start;
 
-        System.out.println(String.format("Queue will finish in %s ms - and was calculated in %s ms. Free mem: %s",
-                eta, timeTaken, Runtime.getRuntime().freeMemory()));
+        System.out.println(String.format("ETA %s ms, Calculation time:  %s ms, Q Size: %s, Free mem: %s",
+                eta, timeTaken, totalSize, Runtime.getRuntime().freeMemory()));
     }
 
 
