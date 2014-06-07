@@ -860,7 +860,7 @@ public class SmartQTest {
         System.out.println("Building task list");
         SmartQ<Task, DefaultTaskResult> queue = makeQueue();
         List<Task> tasks = new LinkedList();
-        final int factor = 100;
+        final int factor = 800;
 
         int[] sizes = new int[]{22,53,11,5,82};
         int totalSize = 0;
@@ -871,6 +871,7 @@ public class SmartQTest {
             for(int i = 0; i < size; i++) {
                 String type = "rate" + (1 + (i % 5));
                 Task t = new Task(type);
+                t.addTag(Math.random() > .5 ? "web1" : "web2");
                 t.setPriority((int) Math.round(Math.random() * 5));
                 tasks.add(t);
             }
@@ -878,18 +879,21 @@ public class SmartQTest {
 
         System.out.println("Setting up queue");
         queue.submit(tasks);
-        queue.setRateLimit("rate1", 1);
-        queue.setRateLimit("rate2", 2);
-        queue.setRateLimit("rate3", 3);
-        queue.setRateLimit("rate4", 4);
-        queue.setRateLimit("rate5", 5);
+        queue.setRateLimit("rate1", 10);
+        queue.setRateLimit("rate2", 5);
+        queue.setRateLimit("rate3", 7);
+        queue.setRateLimit("rate4", 10);
+        queue.setRateLimit("rate5", 15);
+
+        queue.setRateLimit("web1", 40);
+        queue.setRateLimit("web2", 40);
 
         queue.setEstimateForTaskType("rate1", 3113L);
         queue.setEstimateForTaskType("rate2", 1331L);
         queue.setEstimateForTaskType("rate3", 23210L);
         queue.setEstimateForTaskType("rate4", 321L);
         queue.setEstimateForTaskType("rate5", 5122L);
-        queue.setSubscribers(99);
+        queue.setSubscribers(60);
 
         System.out.println("Getting task list");
         Iterator<Task> pending = queue.getStore().getPending();
@@ -903,6 +907,8 @@ public class SmartQTest {
 
         System.out.println(String.format("ETA %s ms, Calculation time:  %s ms, Q Size: %s, Free mem: %s",
                 eta, timeTaken, totalSize, Runtime.getRuntime().freeMemory()));
+
+        assertTrue("For a factor = 800 this should be around 1600ms", timeTaken < 1800L);
     }
 
 

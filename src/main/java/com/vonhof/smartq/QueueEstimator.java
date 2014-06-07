@@ -106,7 +106,7 @@ public class QueueEstimator<T extends Task> {
             }
         }
 
-        System.out.println("Max holding size was " + maxHoldingSize + " and hits on holding: " + holdingHits);
+        //System.out.println("Max holding size was " + maxHoldingSize + " and hits on holding: " + holdingHits);
 
         while(!runningTasks.isEmpty()) {
             time = markFirstDone();
