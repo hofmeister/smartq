@@ -854,12 +854,12 @@ public class SmartQTest {
     public void can_estimate_a_large_complex_queue() throws InterruptedException {
 
         //System.out.println("Grace period");
-        //Thread.sleep(5000);
+        //Thread.sleep(30000);
 
         System.out.println("Building task list");
         SmartQ<Task, DefaultTaskResult> queue = makeQueue();
         List<Task> tasks = new LinkedList();
-        final  int factor = 10;
+        final int factor = 10;
 
         int[] sizes = new int[]{22,53,11,5,82};
         int totalSize = 0;

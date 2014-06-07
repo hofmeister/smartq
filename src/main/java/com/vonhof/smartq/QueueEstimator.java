@@ -41,20 +41,28 @@ public class QueueEstimator<T extends Task> {
         onHold.clear();
         executionOrder.clear();
         time = 0;
-        int tagCount = store.getTags().size();
-        concurrencyCache = new FastCountMap(tagCount);
-        runningTaskCount = new FastCountMap(tagCount);
-        estimates = new FastCountMap(tagCount);
+        concurrencyCache = new FastCountMap(store.getTags(), -1);
+        runningTaskCount = new FastCountMap(store.getTags(), 0);
+        estimates = new FastCountMap(store.getTags(), -1);
 
+        int maxHoldingSize = -1;
 
         if (queue.getSubscribers() < 1) {
             throw new RuntimeException("Can not estimate queue with no subscribers");
         }
 
+        int holdingHits = 0;
+        mainWhile:
         while(queued.hasNext() || !onHold.isEmpty())  {
             time = markFirstDone(); //Moves time forward
 
             //Check if we had to skip some that now can be executed
+            int holdingSize = onHold.size();
+            if (maxHoldingSize < holdingSize) {
+                maxHoldingSize = holdingSize;
+            }
+
+            holdingHits++;
             for(Task holding : new LinkedList<Task>(onHold)) {
                 if (canRunNow(holding)) {
                     if (task != null &&
@@ -68,6 +76,10 @@ public class QueueEstimator<T extends Task> {
                 }
             }
 
+            if (holdingSize > 500) {
+                continue; //Save some memory
+            }
+
             while(queued.hasNext()) {
                 Task next = new Task(queued.next());
                 next.setData(null); //No need to use mem on this
@@ -79,6 +91,9 @@ public class QueueEstimator<T extends Task> {
                     if (!canRunAny()) {
                         break;
                     } else {
+                        if (onHold.size() > 500) {
+                            continue mainWhile;//Save some memory
+                        }
                         continue;
                     }
                 }
@@ -115,7 +130,7 @@ public class QueueEstimator<T extends Task> {
 
         for(Task task : runningTasks) {
 
-            long estimate = estimates.get(task.getType(), -1);
+            long estimate = estimates.get(task.getType());
             if (estimate < 0) {
                 estimate = estimates.set(task.getType(), queue.getEstimateForTaskType(task.getType()));
             }
@@ -128,7 +143,7 @@ public class QueueEstimator<T extends Task> {
         }
 
         for(Task task : new LinkedList<>(runningTasks)) {
-            long estimatedEndTime = task.getStarted() + estimates.get(task.getType(),0);
+            long estimatedEndTime = task.getStarted() + estimates.get(task.getType());
 
             if (estimatedEndTime == fastest) {
                 markAsDone(task, estimatedEndTime);
@@ -192,8 +207,8 @@ public class QueueEstimator<T extends Task> {
         }
 
         for(String tag: (Set<String>)task.getTagSet()) {
-            long runningCount = runningTaskCount.get(tag, 0);
-            long rateLimit = concurrencyCache.get(tag, -1);
+            long runningCount = runningTaskCount.get(tag);
+            long rateLimit = concurrencyCache.get(tag);
             if (rateLimit < 0) {
                 rateLimit = queue.getConcurrency(tag);
                 concurrencyCache.set(tag, rateLimit);
