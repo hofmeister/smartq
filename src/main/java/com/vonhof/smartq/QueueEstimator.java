@@ -10,9 +10,9 @@ public class QueueEstimator<T extends Task> {
 
     private final SmartQ queue;
     private final TaskStore store;
-    private List<Task> runningTasks = new LinkedList<Task>();
-    private List<Task> onHold = new LinkedList<Task>();
-    private List<Task> executionOrder = new LinkedList<Task>();
+    private List<TaskInfo> runningTasks = new LinkedList<TaskInfo>();
+    private List<TaskInfo> onHold = new ArrayList<>(1000);
+    private List<TaskInfo> executionOrder = new LinkedList<TaskInfo>();
     private long time = 0;
 
     private FastCountMap runningTaskCount;
@@ -63,7 +63,7 @@ public class QueueEstimator<T extends Task> {
             }
 
             holdingHits++;
-            for(Task holding : new LinkedList<Task>(onHold)) {
+            for(TaskInfo holding : new ArrayList<>(onHold)) {
                 if (canRunNow(holding)) {
                     if (task != null &&
                             holding.getId().equals(task.getId())) {
@@ -81,8 +81,7 @@ public class QueueEstimator<T extends Task> {
             }
 
             while(queued.hasNext()) {
-                Task next = new Task(queued.next());
-                next.setData(null); //No need to use mem on this
+                TaskInfo next = new TaskInfo(queued.next());
 
                 //Pick from queue
 
@@ -107,6 +106,8 @@ public class QueueEstimator<T extends Task> {
             }
         }
 
+        System.out.println("Max holding size was " + maxHoldingSize + " and hits on holding: " + holdingHits);
+
         while(!runningTasks.isEmpty()) {
             time = markFirstDone();
         }
@@ -114,7 +115,7 @@ public class QueueEstimator<T extends Task> {
         return time;
     }
 
-    public synchronized List<Task> getLastExecutionOrder() {
+    public synchronized List<TaskInfo> getLastExecutionOrder() {
         return Collections.unmodifiableList(executionOrder);
     }
 
@@ -128,7 +129,7 @@ public class QueueEstimator<T extends Task> {
 
         long fastest = time; //Now
 
-        for(Task task : runningTasks) {
+        for(TaskInfo task : runningTasks) {
 
             long estimate = estimates.get(task.getType());
             if (estimate < 0) {
@@ -142,7 +143,7 @@ public class QueueEstimator<T extends Task> {
             }
         }
 
-        for(Task task : new LinkedList<>(runningTasks)) {
+        for(TaskInfo task : new LinkedList<>(runningTasks)) {
             long estimatedEndTime = task.getStarted() + estimates.get(task.getType());
 
             if (estimatedEndTime == fastest) {
@@ -155,7 +156,7 @@ public class QueueEstimator<T extends Task> {
 
 
 
-    private void markAsRunning(Task task) {
+    private void markAsRunning(TaskInfo task) {
         if (log.isDebugEnabled()) {
             log.debug(String.format("Marking %s as running at %s", task, time));
         }
@@ -167,14 +168,14 @@ public class QueueEstimator<T extends Task> {
             task.setStarted(time);
         }
 
-        for(String tag: (Set<String>)task.getTagSet()) {
+        for(String tag: task.getTags()) {
             runningTaskCount.increment(tag,1);
         }
 
         executionOrder.add(task);
     }
 
-    private void markAsDone(Task task, long endTime) {
+    private void markAsDone(TaskInfo task, long endTime) {
         if (!runningTasks.remove(task)) {
             return;
         }
@@ -185,7 +186,7 @@ public class QueueEstimator<T extends Task> {
 
         task.setEnded(endTime);
 
-        for(String tag: (Set<String>)task.getTagSet()) {
+        for(String tag: task.getTags()) {
             runningTaskCount.decrement(tag, 1);
         }
     }
@@ -200,13 +201,13 @@ public class QueueEstimator<T extends Task> {
         return true;
     }
 
-    private boolean canRunNow(Task task) throws InterruptedException {
+    private boolean canRunNow(TaskInfo task) throws InterruptedException {
 
         if (!canRunAny()) {
             return false;
         }
 
-        for(String tag: (Set<String>)task.getTagSet()) {
+        for(String tag: task.getTags()) {
             long runningCount = runningTaskCount.get(tag);
             long rateLimit = concurrencyCache.get(tag);
             if (rateLimit < 0) {

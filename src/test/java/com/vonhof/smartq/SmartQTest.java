@@ -2,6 +2,7 @@ package com.vonhof.smartq;
 
 
 import com.vonhof.smartq.Task.State;
+import junit.framework.Assert;
 import org.junit.After;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -632,18 +633,18 @@ public class SmartQTest {
         QueueEstimator estimator = new QueueEstimator(queue);
 
         assertEquals(2000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
 
         queue.setRateLimit("test", 1);
 
         assertEquals(4000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
 
         queue.setRateLimit("test", -1);
         queue.setSubscribers(10);
 
         assertEquals(1000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
     }
 
 
@@ -714,17 +715,17 @@ public class SmartQTest {
         QueueEstimator estimator = new QueueEstimator(queue);
 
         assertEquals(2000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,c,d,e,f,g,b), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a, c, d, e, f, g, b), estimator.getLastExecutionOrder());
 
         queue.setSubscribers(3);
 
         assertEquals(3000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,c,d,b,e,f,g), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a, c, d, b, e, f, g), estimator.getLastExecutionOrder());
 
         queue.setSubscribers(2);
 
         assertEquals(4000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a, c, b, d, e, f, g), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a, c, b, d, e, f, g), estimator.getLastExecutionOrder());
     }
 
 
@@ -759,17 +760,17 @@ public class SmartQTest {
         QueueEstimator estimator = new QueueEstimator(queue);
 
         assertEquals(1000L, estimator.taskStarts(b));
-        assertEquals(Arrays.asList(a,c,d,e,f,g), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a,c,d,e,f,g), estimator.getLastExecutionOrder());
 
         queue.setSubscribers(3);
 
         assertEquals(1000L, estimator.taskStarts(b));
-        assertEquals(Arrays.asList(a,c,d), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a,c,d), estimator.getLastExecutionOrder());
 
         queue.setSubscribers(2);
 
         assertEquals(1000L, estimator.taskStarts(b));
-        assertEquals(Arrays.asList(a, c), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a, c), estimator.getLastExecutionOrder());
     }
 
 
@@ -804,11 +805,11 @@ public class SmartQTest {
         QueueEstimator estimator = new QueueEstimator(queue);
 
         assertEquals(5000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,b,c,e,f,d,g), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a,b,c,e,f,d,g), estimator.getLastExecutionOrder());
 
         queue.setSubscribers(3);
         assertEquals(7000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a, b, c, d, e, f, g), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a, b, c, d, e, f, g), estimator.getLastExecutionOrder());
     }
 
     @Test
@@ -842,11 +843,11 @@ public class SmartQTest {
         QueueEstimator estimator = new QueueEstimator(queue);
 
         assertEquals(0L, estimator.taskStarts(e));
-        assertEquals(Arrays.asList(a,b,c), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a,b,c), estimator.getLastExecutionOrder());
 
         queue.setSubscribers(3);
         assertEquals(2000L, estimator.taskStarts(e));
-        assertEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
+        assertHashEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
     }
 
 
@@ -854,12 +855,12 @@ public class SmartQTest {
     public void can_estimate_a_large_complex_queue() throws InterruptedException {
 
         //System.out.println("Grace period");
-        //Thread.sleep(30000);
+        //Thread.sleep(5000);
 
         System.out.println("Building task list");
         SmartQ<Task, DefaultTaskResult> queue = makeQueue();
         List<Task> tasks = new LinkedList();
-        final int factor = 10;
+        final int factor = 100;
 
         int[] sizes = new int[]{22,53,11,5,82};
         int totalSize = 0;
@@ -963,6 +964,12 @@ public class SmartQTest {
 
         private Task getTask() {
             return task;
+        }
+    }
+    
+    private void assertHashEquals(Object expected, Object actual) {
+        if (expected.hashCode() != actual.hashCode()) {
+            fail(Assert.format(null, expected, actual));
         }
     }
 
