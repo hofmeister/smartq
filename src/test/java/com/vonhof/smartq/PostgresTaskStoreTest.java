@@ -9,7 +9,7 @@ import java.util.UUID;
 public class PostgresTaskStoreTest extends TaskStoreTest {
 
     @After
-    public void tearDown() throws SQLException {
+    public void tearDown() throws Exception {
         PostgresTaskStore pgStore = (PostgresTaskStore) store;
         pgStore.dropTable();
         pgStore.close();

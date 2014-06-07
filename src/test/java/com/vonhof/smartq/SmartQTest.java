@@ -2,6 +2,7 @@ package com.vonhof.smartq;
 
 
 import com.vonhof.smartq.Task.State;
+import org.junit.After;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -29,6 +30,26 @@ public class SmartQTest {
         return new SmartQ<Task, DefaultTaskResult>(store);
     }
 
+
+    @Test
+    public void concurrency_is_calculated_based_on_tag_and_global_setting() throws InterruptedException {
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+
+        assertEquals(-1, queue.getConcurrency());
+        assertEquals(-1, queue.getConcurrency("any"));
+
+        assertFalse(queue.isRateLimited(new Task("any")));
+
+        queue.setRateLimit("any", 5);
+
+
+        assertEquals(-1, queue.getConcurrency());
+        assertEquals(5, queue.getConcurrency("any"));
+        assertFalse(queue.isRateLimited(new Task("any")));
+
+    }
+
+
     @Test
     public void tasks_can_be_added_and_acquired() throws InterruptedException {
         SmartQ<Task, DefaultTaskResult> queue = makeQueue();
@@ -43,6 +64,7 @@ public class SmartQTest {
 
         assertEquals(0, queue.queueSize());
     }
+
 
     @Test
     public void tasks_can_be_prioritized() throws InterruptedException {
@@ -242,6 +264,7 @@ public class SmartQTest {
         queue.submit(task2);
         queue.submit(task3);
         queue.submit(task4);
+        queue.setSubscribers(1);
         queue.setEstimateForTaskType("a", 1000);
         queue.setEstimateForTaskType("b", 2000);
 
@@ -342,16 +365,16 @@ public class SmartQTest {
         assertEquals("Estimate is as expected", 1000L, queue.getEstimateForTaskType("a"));
 
         Task a = queue.acquire("a");
-        WatchProvider.appendTime(500); //Simulate 500 ms passing
+        WatchProvider.appendTime(500);
         queue.acknowledge(a.getId());
 
         assertEquals("Estimate shows updated time", 750L, queue.getEstimateForTaskType("a"));
 
         Task a2 = queue.acquire("a");
-        WatchProvider.appendTime(500); //Simulate 500 ms passing
+        WatchProvider.appendTime(1500);
         queue.acknowledge(a2.getId());
 
-        assertEquals("Estimate shows updated time", 666L, queue.getEstimateForTaskType("a"));
+        assertEquals("Estimate shows updated time", 1000L, queue.getEstimateForTaskType("a"));
 
     }
 
@@ -518,8 +541,6 @@ public class SmartQTest {
         assertEquals(queue2.queueSize(), 4);
         assertEquals(queue3.queueSize(), 4);
 
-
-
         long queueSize = queue1.queueSize();
 
         Stack<ThreadedSubscriber> subscribers = new Stack<ThreadedSubscriber>();
@@ -533,7 +554,7 @@ public class SmartQTest {
             subscriber.start();
         }
 
-        int maxRetries = 10;
+        int maxRetries = 50;
         int retries = 0;
 
         while (!subscribers.isEmpty()) {
@@ -623,7 +644,7 @@ public class SmartQTest {
         queue.setSubscribers(10);
 
         assertEquals(1000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+        assertEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
     }
 
 
@@ -704,7 +725,7 @@ public class SmartQTest {
         queue.setSubscribers(2);
 
         assertEquals(4000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,c,b,d,e,f,g), estimator.getLastExecutionOrder());
+        assertEquals(Arrays.asList(a, c, b, d, e, f, g), estimator.getLastExecutionOrder());
     }
 
 
@@ -749,7 +770,7 @@ public class SmartQTest {
         queue.setSubscribers(2);
 
         assertEquals(1000L, estimator.taskStarts(b));
-        assertEquals(Arrays.asList(a,c), estimator.getLastExecutionOrder());
+        assertEquals(Arrays.asList(a, c), estimator.getLastExecutionOrder());
     }
 
 
@@ -788,7 +809,7 @@ public class SmartQTest {
 
         queue.setSubscribers(3);
         assertEquals(7000L, estimator.queueEnds());
-        assertEquals(Arrays.asList(a,b,c,d,e,f,g), estimator.getLastExecutionOrder());
+        assertEquals(Arrays.asList(a, b, c, d, e, f, g), estimator.getLastExecutionOrder());
     }
 
     @Test
@@ -826,7 +847,7 @@ public class SmartQTest {
 
         queue.setSubscribers(3);
         assertEquals(2000L, estimator.taskStarts(e));
-        assertEquals(Arrays.asList(a,b,c,d), estimator.getLastExecutionOrder());
+        assertEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
     }
 
     private static class ThreadedWaiter extends Thread {
@@ -870,6 +891,12 @@ public class SmartQTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+
+            try {
+                queue.getStore().close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
         private boolean hasAcquired() {
@@ -897,6 +924,12 @@ public class SmartQTest {
                 done = true;
 
             } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            try {
+                queue.getStore().close();
+            } catch (Exception e) {
                 e.printStackTrace();
             }
         }

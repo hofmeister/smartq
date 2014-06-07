@@ -8,20 +8,8 @@ import org.postgresql.PGConnection;
 import org.postgresql.PGNotification;
 
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.sql.*;
+import java.util.*;
 import java.util.concurrent.Callable;
 
 public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
@@ -35,8 +23,6 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     private final String url;  //jdbc:postgresql://host:port/database
     private final String username;
     private final String password;
-    private volatile boolean isolated = false;
-
     private String tableName = "queue";
 
     private final ThreadLocal<PostgresClient> client = new ThreadLocal<PostgresClient>() {
@@ -66,7 +52,6 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         this.url = url;
         this.username = username;
         this.password = password;
-        connect();
     }
 
     public String getTableName() {
@@ -77,7 +62,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         this.tableName = tableName;
     }
 
-    private void connect() {
+    public void connect() {
         client.get();
     }
 
@@ -109,27 +94,32 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public void queue(T task) {
+    public void queue(final T task) {
         try {
             task.setState(State.PENDING);
-            client().update(
-                    String.format("INSERT INTO \"%s\" (id, content, state, priority, type) VALUES (?, ?, ?, ?, ?)", tableName),
-                    task.getId(),
-                    documentSerializer.serialize(task).getBytes("UTF-8"),
-                    STATE_QUEUED,
-                    task.getPriority(),
-                    task.getType()
-            );
-            for (String tag : (Set<String>) task.getTags().keySet()) {
-                if (log.isTraceEnabled()) {
-                    log.trace(String.format("Tagging task %s with tags: %s", task.getId(), task.getTags()));
-                }
+            withinTransaction(new Callable<Void>() {
 
-                client().update(
-                        String.format("INSERT INTO \"%s_tags\" (id, tag) VALUES (?, ?)", tableName),
-                        task.getId(), tag
-                );
-            }
+                @Override
+                public Void call() throws Exception {
+                    client().update(
+                            String.format("INSERT INTO \"%s\" (id, content, state, priority, type) VALUES (?, ?, ?, ?, ?)", tableName),
+                            task.getId(),
+                            documentSerializer.serialize(task).getBytes("UTF-8"),
+                            STATE_QUEUED,
+                            task.getPriority(),
+                            task.getType()
+                    );
+
+                    for (String tag : (Set<String>) task.getTags().keySet()) {
+                        client().update(
+                                String.format("INSERT INTO \"%s_tags\" (id, tag) VALUES (?, ?)", tableName),
+                                task.getId(), tag
+                        );
+                    }
+
+                    return null;
+                }
+            });
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -173,22 +163,22 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     @Override
     public Iterator<T> getFailed() {
-        return client().getList(STATE_ERROR);
+        return (Iterator<T>) client().getList(STATE_ERROR);
     }
 
     @Override
     public Iterator<T> getQueued() {
-        return client().getList(STATE_QUEUED);
+        return (Iterator<T>) client().getList(STATE_QUEUED);
     }
 
     @Override
     public Iterator<T> getPending() {
-        return client().getPending();
+        return (Iterator<T>) client().getPending();
     }
 
     @Override
     public Iterator<T> getPending(String tag) {
-        return client().getPending(tag);
+        return (Iterator<T>) client().getPending(tag);
     }
 
     @Override
@@ -215,19 +205,27 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public void setTaskTypeEstimate(String type, long estimate) {
+    public void setTaskTypeEstimate(final String type, final long estimate) {
         try {
 
-            client().update(
-                    String.format("DELETE FROM \"%s_estimates\" WHERE type = ?", tableName),
-                    type
-            );
+            withinTransaction(new Callable() {
+                @Override
+                public Object call() throws Exception {
 
-            client().update(
-                    String.format("INSERT INTO \"%s_estimates\" (type, duration) VALUES (?, ?)", tableName),
-                    type,
-                    estimate
-            );
+                    client().update(
+                            String.format("DELETE FROM \"%s_estimates\" WHERE type = ?", tableName),
+                            type
+                    );
+
+                    client().update(
+                            String.format("INSERT INTO \"%s_estimates\" (type, duration) VALUES (?, ?)", tableName),
+                            type,
+                            estimate
+                    );
+
+                    return null;  //To change body of implemented methods use File | Settings | File Templates.
+                }
+            });
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -235,17 +233,27 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     @Override
     public Iterator<T> getQueued(String type) {
-        return client().getList(STATE_QUEUED, type);
+        return (Iterator<T>) client().getList(STATE_QUEUED, type);
+    }
+
+    @Override
+    public Iterator<UUID> getQueuedIds() {
+        return client().getIds(STATE_QUEUED);
+    }
+
+    @Override
+    public Iterator<UUID> getQueuedIds(String type) {
+        return client().getIds(STATE_QUEUED, type);
     }
 
     @Override
     public Iterator<T> getRunning() {
-        return client().getList(STATE_RUNNING);
+        return (Iterator<T>) client().getList(STATE_RUNNING);
     }
 
     @Override
     public Iterator<T> getRunning(String type) {
-        return client().getList(STATE_RUNNING, type);
+        return (Iterator<T>) client().getList(STATE_RUNNING, type);
     }
 
     @Override
@@ -275,38 +283,77 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
-
     }
 
-    @Override
-    public <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
-        boolean isolationStartedInThisCall = false;
+
+    public void withinTransaction(Callable callable) {
         try {
-            if (!isolated) {
+            client().connection.setAutoCommit(false);
+            callable.call();
+            client().connection.commit();
+        } catch (Exception e) {
+             try {
+                client().connection.rollback();
+                log.warn("Rolled back transaction", e);
+            } catch (SQLException e1) {
+                 log.debug("Failed to roll back transaction", e1);
+             }
+        } finally {
+            try {
+                client().connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                log.error("Failed to reactivate auto commit", e);
+            }
+        }
+    }
+
+
+    @Override
+    public  <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
+        boolean isolationStartedInThisCall = false;
+        boolean transactionDone = true;
+        try {
+            if (!client().isolated) {
                 client().connection.setAutoCommit(false);
                 client().lockTable();
-                isolated = isolationStartedInThisCall = true;
+                client().isolated = isolationStartedInThisCall = true;
+                transactionDone = false;
             }
 
             U result = callable.call();
             if (isolationStartedInThisCall) {
                 client().connection.commit();
+                transactionDone = true;
+                log.trace("Committed transaction and unlocked table");
             }
             return result;
         } catch (Exception e) {
             if (isolationStartedInThisCall) {
                 try {
                     client().connection.rollback();
+                    transactionDone = true;
+                    log.warn("Rolled back transaction", e);
                 } catch (SQLException e1) {
+                    log.error("Failed to roll back transaction", e);
                 }
             }
             throw new RuntimeException(e);
         } finally {
             if (isolationStartedInThisCall) {
-                isolated = false;
+                client().isolated = false;
+                if (!transactionDone) {
+                    log.error("A transaction was never committed! Doing so now.");
+                    try {
+                        client().connection.commit();
+                    } catch (SQLException e) {
+                        log.error("Failed to recover transaction commit.", e);
+                    }
+                }
+
                 try {
                     client().connection.setAutoCommit(true);
                 } catch (SQLException e) {
+                    log.error("Failed to reactivate auto commit", e);
                 }
             }
         }
@@ -329,23 +376,41 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     public void createTable() throws IOException, SQLException {
         try {
-            client().query(String.format("select 1 from \"%s\" limit 1", tableName));
+            client().execute(String.format("select 1 from \"%s\" limit 1", tableName));
             return;
-        } catch (SQLException ex) {
+        } catch (Exception ex) {
             //Do nothing - above is just a check if the table exists
         }
 
-        String sql = IOUtils.toString(getClass().getResource("/pgtable.sql")).replaceAll("%tableName%", tableName);
-        client().update(sql);
+        withinTransaction(new Callable() {
+
+            @Override
+            public Object call() throws Exception {
+                String statements = IOUtils.toString(PostgresTaskStore.class.getResource("/pgtable.sql")).replaceAll("%tableName%", tableName);
+                String[] statementArr = statements.split(";");
+                for(String sql : statementArr) {
+                    client().update(sql);
+                }
+                return null;
+            }
+        });
     }
 
     public void dropTable() throws SQLException {
-        client().update(String.format("DROP TABLE \"%s_tags\"", tableName));
-        client().update(String.format("DROP TABLE \"%s\"", tableName));
+        withinTransaction(new Callable() {
+            @Override
+            public Object call() throws Exception {
+                client().update(String.format("DROP TABLE \"%s_tags\"", tableName));
+                client().update(String.format("DROP TABLE \"%s\"", tableName));
+                return null;
+            }
+        });
+
     }
 
-    public void close() throws SQLException {
-        client().connection.close();
+    @Override
+    public void close() throws Exception {
+        client().close();
     }
 
     public void setDocumentSerializer(DocumentSerializer documentSerializer) {
@@ -355,7 +420,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     private class PostgresClient {
         private final Connection connection;
         private final PGConnection pgconn;
-        private final Listener listener = new Listener();
+        private volatile boolean isolated = false;
+        private Listener listener = new Listener();
 
         private PostgresClient() throws SQLException {
             connection = DriverManager.getConnection(url, username, password);
@@ -365,37 +431,57 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
         public void startListening() {
             listener.start();
+            try {
+                pgListen();
+            } catch (SQLException e) {
+                log.error("Failed to listen on postgres", e);
+            }
+        }
+
+        public void close() throws SQLException {
+            log.trace("Closing client connection");
+            connection.close();
+
+            if (listener.isAlive()) {
+                listener.interrupt();
+            }
+        }
+
+        @Override
+        protected void finalize() throws Throwable {
+
+            close();
         }
 
         private void lockTable() throws SQLException {
-            execute(String.format("LOCK TABLE \"%s\" IN ACCESS EXCLUSIVE MODE", tableName));
-            log.debug("Locking table");
+            execute(String.format("LOCK TABLE \"%s\" IN EXCLUSIVE MODE", tableName));
+            log.trace("Locking table");
         }
 
-        private List<Map<String, Object>> query(String sql, Object... args) throws SQLException {
+        private <T> List<T> query(RowMapper<T> mapper, String sql, Object... args) throws SQLException {
+            PreparedStatement stmt = stmt(sql, args);
             try {
-                PreparedStatement stmt = stmt(sql, args);
-
                 ResultSet result = stmt.executeQuery();
 
-                List<Map<String, Object>> out = new ArrayList<Map<String, Object>>();
+                List<T> out = new ArrayList();
                 while (result.next()) {
-                    Map<String, Object> row = new HashMap<String, Object>();
-                    ResultSetMetaData md = stmt.getMetaData();
-                    for (int j = 0; j < md.getColumnCount(); j++) {
-                        String name = md.getColumnName(j + 1);
-                        Object value = result.getObject(j + 1);
-                        row.put(name, value);
-                    }
-                    out.add(row);
+                    out.add(mapper.mapRow(stmt, result));
                 }
-                stmt.close();
+
+                result.close();
+
                 return out;
 
             } catch (SQLException e) {
                 log.debug("SQL: " + sql, e);
                 throw e;
+            } finally {
+                stmt.close();
             }
+        }
+
+        private <T> Iterator<T> queryIterator(RowMapper<T> mapper, final String sql, final Object... args) throws SQLException {
+            return new DBIterator(mapper, sql, args);
         }
 
         private T queryOne(String sql, Object... args) throws SQLException {
@@ -408,55 +494,46 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
         private long queryForLong(String sql, Object... args) throws SQLException {
             PreparedStatement stmt = stmt(sql, args);
+            try {
 
-            ResultSet result = stmt.executeQuery();
-
-            if (result.next()) {
-                return result.getLong(1);
+                ResultSet result = stmt.executeQuery();
+                if (result.next()) {
+                    long out = result.getLong(1);
+                    result.close();
+                    return out;
+                }
+                return 0;
+            } finally {
+                stmt.close();
             }
-            return 0;
         }
 
         private List<T> queryAll(String sql, Object... args) throws SQLException {
-            List<Map<String, Object>> rows = query(sql, args);
-            List<T> out = new ArrayList<T>();
-            if (rows.isEmpty()) {
-                return out;
-            }
-
-            for (Map<String, Object> row : rows) {
-                byte[] content = (byte[]) row.get("content");
-
-                try {
-                    T task = documentSerializer.deserialize(new String(content, "UTF-8"), taskClass);
-                    out.add(task);
-                } catch (IOException e) {
-                    log.warn(String.format("Failed to deserialize task: %s", row.get("id")), e);
-                }
-            }
-
-            return out;
+            return query(TASK_ROW_MAPPER, sql, args);
         }
 
+
         private void execute(String sql, Object... args) throws SQLException {
+            PreparedStatement stmt = stmt(sql, args);
             try {
-                PreparedStatement stmt = stmt(sql, args);
                 stmt.execute();
-                stmt.close();
             } catch (SQLException e) {
                 log.debug("SQL: " + sql, e);
                 throw e;
+            } finally {
+                stmt.close();
             }
         }
 
         private void update(String sql, Object... args) throws SQLException {
+            PreparedStatement stmt = stmt(sql, args);
             try {
-                PreparedStatement stmt = stmt(sql, args);
                 stmt.executeUpdate();
-                stmt.close();
             } catch (SQLException e) {
                 log.debug("SQL: " + sql, e);
                 throw e;
+            } finally {
+                stmt.close();
             }
         }
 
@@ -482,22 +559,22 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             try {
                 if (type != null && !type.isEmpty()) {
                     return client()
-                            .queryAll(
+                            .queryIterator(TASK_ROW_MAPPER,
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
                                             "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
                                             "GROUP BY task.id " +
                                             "ORDER BY task.priority DESC, task.created DESC, task.order ASC ", tableName), state, type
-                            ).iterator();
+                            );
                 } else {
                     return client()
-                            .queryAll(
+                            .queryIterator(TASK_ROW_MAPPER,
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%s\" task, \"%1$s_tags\" tag " +
                                             "WHERE task.state = ? " +
                                             "GROUP BY task.id " +
                                             "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName), state
-                            ).iterator();
+                            );
                 }
             } catch (SQLException e) {
                 throw new RuntimeException(e);
@@ -512,7 +589,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             try {
                 if (tag != null && !tag.isEmpty()) {
                     return client()
-                            .queryAll(
+                            .queryIterator(TASK_ROW_MAPPER,
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%s\" task, \"%1$s_tags\" tag " +
                                             "WHERE state IN (?,?) AND tag.id = task.id and tag.tag = ? " +
@@ -521,10 +598,10 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                                     STATE_RUNNING,
                                     STATE_QUEUED,
                                     tag
-                            ).iterator();
+                            );
                 } else {
                     return client()
-                            .queryAll(
+                            .queryIterator(TASK_ROW_MAPPER,
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%s\" task " +
                                             "WHERE task.state IN (?,?) " +
@@ -532,7 +609,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                                             "ORDER BY task.state DESC, task.priority DESC, task.created DESC, task.order ASC ", tableName),
                                     STATE_RUNNING,
                                     STATE_QUEUED
-                            ).iterator();
+                            );
                 }
 
             } catch (SQLException e) {
@@ -583,39 +660,168 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
         private CountMap<String> queryForCountMap(String sql, Object... args) throws SQLException {
             PreparedStatement stmt = stmt(sql, args);
-            ResultSet result = stmt.executeQuery();
-            CountMap<String> out = new CountMap<String>();
-            while (result.next()) {
-                out.increment(result.getString(1), result.getInt(2));
+            try {
+                ResultSet result = stmt.executeQuery();
+                CountMap<String> out = new CountMap<String>();
+                while (result.next()) {
+                    out.increment(result.getString(1), result.getInt(2));
+                }
+                return out;
+            } finally {
+                stmt.close();
             }
-            return out;
         }
 
 
         public Set<String> queryStringSet(String sql, Object... args) throws SQLException {
             PreparedStatement stmt = stmt(sql, args);
-            ResultSet result = stmt.executeQuery();
-            Set<String> out = new HashSet<String>();
-            while (result.next()) {
-                out.add(result.getString(1));
+            try {
+                ResultSet result = stmt.executeQuery();
+                Set<String> out = new HashSet<String>();
+                while (result.next()) {
+                    out.add(result.getString(1));
+                }
+                return out;
+            } finally {
+                stmt.close();
             }
-            return out;
         }
 
         public void pgListen() throws SQLException {
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("Listening on PG : \"%s_event\"", tableName));
+            }
             execute(String.format("LISTEN \"%s_event\"", tableName));
         }
 
         public void pgNotify() throws SQLException {
+            if (log.isTraceEnabled()) {
+                log.trace(String.format("Notifying on PG : \"%s_event\"", tableName));
+            }
+
             execute(String.format("NOTIFY \"%s_event\"", tableName));
         }
 
         public boolean hasNotifications() throws SQLException {
-            query("SELECT 1"); //Trigger notification push
+            execute("SELECT 1"); //Trigger notification push
             PGNotification[] notifications = pgconn.getNotifications();
             return notifications != null && notifications.length > 0;
         }
+
+
+        public Iterator<UUID> getIds(int state) {
+            return getIds(state, null);
+        }
+
+        public Iterator<UUID> getIds(int state, String type) {
+            try {
+                if (type != null && !type.isEmpty()) {
+                    return client()
+                            .queryIterator(UUID_ROW_MAPPER,
+                                    String.format("SELECT task.id " +
+                                            "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                                            "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
+                                            "GROUP BY task.id " +
+                                            "ORDER BY task.priority DESC, task.created DESC, task.order ASC ", tableName), state, type
+                            );
+                } else {
+                    return client()
+                            .queryIterator(UUID_ROW_MAPPER,
+                                    String.format("SELECT task.id " +
+                                            "FROM \"%s\" task " +
+                                            "WHERE task.state = ? " +
+                                            "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName), state
+                            );
+                }
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+
+        public class DBIterator<T> implements Iterator<T> {
+
+            private final String sql;
+            private final Object[] args;
+            private final RowMapper<T> rowMapper;
+            private int offset = 0;
+            private int lastOffset = -1;
+            private T nextValue = null;
+
+            public DBIterator(RowMapper<T> rowMapper, String sql, Object ... args) {
+                this.rowMapper = rowMapper;
+                this.sql = sql;
+                this.args = args;
+            }
+
+            @Override
+            public boolean hasNext() {
+                if (lastOffset == offset) {
+                    return nextValue != null;
+                }
+
+                long timeStart = System.currentTimeMillis();
+                PreparedStatement stmt = stmt(String.format("%s OFFSET %s LIMIT 1", sql, offset), args);
+                lastOffset = offset;
+                nextValue = null;
+                try {
+                    ResultSet result = stmt.executeQuery();
+                    if (result.next()) {
+                        nextValue = rowMapper.mapRow(stmt,result);
+                        return true;
+                    }
+                    result.close();
+                } catch (SQLException e) {
+                    log.warn("Failed to execute query", e);
+                } finally {
+                    long timeTaken = System.currentTimeMillis() - timeStart;
+                    if (log.isDebugEnabled() && timeTaken > 200) {
+                        log.debug(String.format("Query finished in %s ms: %s", timeTaken, sql));
+                    }
+                    try {
+                        stmt.close();
+                    } catch (SQLException e) {}
+                }
+                return false;
+            }
+
+            @Override
+            public T next() {
+                offset++;
+                return nextValue;
+            }
+
+            @Override
+            public void remove() {
+                throw new RuntimeException("Method not implemented");
+            }
+        }
     }
+
+    private static interface RowMapper<T> {
+
+        T mapRow(PreparedStatement stmt, ResultSet result) throws SQLException;
+    }
+
+    private final RowMapper<UUID> UUID_ROW_MAPPER = new RowMapper<UUID>() {
+        @Override
+        public UUID mapRow(PreparedStatement stmt, ResultSet result) throws SQLException {
+            return (UUID) result.getObject(1);
+        }
+    };
+
+    private final RowMapper<T> TASK_ROW_MAPPER = new RowMapper<T>() {
+        @Override
+        public T mapRow(PreparedStatement stmt, ResultSet result) throws SQLException {
+            UUID id = (UUID) result.getObject("id");
+            try {
+                String contents = IOUtils.toString(result.getBinaryStream("content"), "UTF-8");
+                return documentSerializer.deserialize(contents, taskClass);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    };
 
     private class Listener extends Thread {
         private Listener() {
@@ -627,6 +833,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         public void run() {
 
             final PostgresClient client;
+
             try {
                 client = new PostgresClient();
                 client.pgListen();
@@ -651,7 +858,7 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
                 synchronized (this) {
                     try {
-                        wait(10000);
+                        wait(1000);
                     } catch (InterruptedException e) {
                         return;
                     }

@@ -26,6 +26,10 @@ public interface TaskStore<T extends Task> {
 
     public Iterator<T> getQueued(String type);
 
+    public Iterator<UUID> getQueuedIds();
+
+    public Iterator<UUID> getQueuedIds(String type);
+
     public Iterator<T> getRunning();
 
     public Iterator<T> getRunning(String type);
@@ -55,4 +59,6 @@ public interface TaskStore<T extends Task> {
     void addTaskTypeDuration(String type, long duration);
 
     void setTaskTypeEstimate(String type, long estimate);
+
+    void close() throws Exception;
 }

@@ -126,6 +126,11 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
+    public void close() throws Exception {
+
+    }
+
+    @Override
     public Iterator<T> getQueued(String type) {
         List<T> out = new LinkedList<T>();
         for(T task : queuedTasks) {
@@ -136,6 +141,26 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
 
         sort(out);
         return Collections.unmodifiableList(out).iterator();
+    }
+
+    @Override
+    public Iterator<UUID> getQueuedIds() {
+        List<UUID> out = new LinkedList<UUID>();
+        Iterator<T> queued = getQueued();
+        while(queued.hasNext()) {
+            out.add(queued.next().getId());
+        }
+        return out.iterator();
+    }
+
+    @Override
+    public Iterator<UUID> getQueuedIds(String type) {
+        List<UUID> out = new LinkedList<UUID>();
+        Iterator<T> queued = getQueued(type);
+        while(queued.hasNext()) {
+            out.add(queued.next().getId());
+        }
+        return out.iterator();
     }
 
     public synchronized Iterator<T> getRunning() {

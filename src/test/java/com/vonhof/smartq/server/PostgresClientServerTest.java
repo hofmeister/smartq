@@ -23,7 +23,7 @@ public class PostgresClientServerTest extends ClientServerTest {
     }
 
     @After
-    public void tearDown() throws SQLException {
+    public void tearDown() throws Exception {
         store.dropTable();
         store.close();
     }

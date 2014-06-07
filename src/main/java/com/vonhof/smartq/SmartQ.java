@@ -3,15 +3,10 @@ package com.vonhof.smartq;
 import com.vonhof.smartq.Task.State;
 import org.apache.log4j.Logger;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class SmartQ<T extends Task,U>  {
 
@@ -20,8 +15,9 @@ public class SmartQ<T extends Task,U>  {
     private final Map<String, Integer> taskTagRateLimits = new ConcurrentHashMap<String, Integer>();
     private final Map<String, Integer> taskTagRetryLimits = new ConcurrentHashMap<String, Integer>();
 
-    private volatile int subscribers = 0;
     private final TaskStore<T> store;
+    private volatile int subscribers = 0;
+    private volatile int concurrency = -1;
 
 
     private final List<QueueListener> listeners = new ArrayList<QueueListener>();
@@ -31,7 +27,6 @@ public class SmartQ<T extends Task,U>  {
     public SmartQ(final TaskStore<T> store) {
         this.store = store;
     }
-
 
     public int getSubscribers() {
         return subscribers;
@@ -46,11 +41,11 @@ public class SmartQ<T extends Task,U>  {
     }
 
     protected int getConcurrency() {
-        int concurrency = getSubscribers();
-        if (concurrency < 1) {
-            concurrency = 1;
-        }
         return concurrency;
+    }
+
+    public void setConcurrency(int concurrency) {
+        this.concurrency = concurrency;
     }
 
     public void addListener(QueueListener listener) {
@@ -82,7 +77,7 @@ public class SmartQ<T extends Task,U>  {
         if (concurrencyLimit < 1) {
             return concurrency;
         } else {
-            return Math.min(concurrencyLimit,concurrency);
+            return concurrency > 0 ? Math.min(concurrencyLimit,concurrency) : concurrencyLimit;
         }
     }
 
@@ -138,7 +133,7 @@ public class SmartQ<T extends Task,U>  {
         if (taskTagRateLimits.containsKey(tag)) {
             return taskTagRateLimits.get(tag);
         }
-        return -1;
+        return getConcurrency();
     }
 
     public final void setMaxRetries(String tag, int limit) {
@@ -216,24 +211,26 @@ public class SmartQ<T extends Task,U>  {
         return getStore().queueSize() + getStore().runningCount();
     }
 
+
+    public boolean submit(Collection<T> tasks) throws InterruptedException {
+        return submit((T[]) tasks.toArray(new Task[0]));
+    }
     
-    public boolean submit(final T task) throws InterruptedException {
-        for(Map.Entry<String,Integer> entry : (Set<Map.Entry<String,Integer>>)task.getTags().entrySet()) {
-            if (entry.getValue() > 0) {
-                setRateLimit(entry.getKey(), entry.getValue());
+    public boolean submit(final T ... tasks) throws InterruptedException {
+        for(T task : tasks) {
+            for(Map.Entry<String,Integer> entry : (Set<Map.Entry<String,Integer>>)task.getTags().entrySet()) {
+                if (entry.getValue() > 0) {
+                    setRateLimit(entry.getKey(), entry.getValue());
+                }
             }
+            getStore().queue(task);
         }
 
-        getStore().isolatedChange(new Callable<T>() {
-            @Override
-            public T call() throws Exception {
-                getStore().queue(task);
-                getStore().signalChange();
+        getStore().signalChange();
 
-                triggerSubmit(task);
-                return task;
-            }
-        });
+        for(T task : tasks) {
+            triggerSubmit(task);
+        }
 
         return true;
     }
@@ -257,24 +254,20 @@ public class SmartQ<T extends Task,U>  {
             return false;
         }
 
-        getStore().isolatedChange(new Callable<T>() {
-            @Override
-            public T call() throws Exception {
-                log.debug("Cancelled task");
-                getStore().remove(task);
-                task.setEnded(WatchProvider.currentTime());
+        log.debug("Cancelled task");
+        getStore().remove(task);
+        task.setEnded(WatchProvider.currentTime());
 
-                if (!reschedule) {
-                    getStore().signalChange();
-                    triggerDone(task);
-                }
-                return task;
-            }
-        });
+        if (!reschedule) {
+            getStore().signalChange();
+
+        }
 
         if (reschedule) {
             task.reset();
             submit(task);
+        } else {
+            triggerDone(task);
         }
 
         return true;
@@ -282,61 +275,48 @@ public class SmartQ<T extends Task,U>  {
 
     
     public void acknowledge(final UUID id, U response) throws InterruptedException {
-        getStore().isolatedChange(new Callable<T>() {
+        final T task = getStore().get(id);
+        if (task == null) {
+            throw new IllegalArgumentException("Task not found: " + id);
+        }
 
-            @Override
-            public T call() throws Exception {
-                T task = getStore().get(id);
-                if (task == null) {
-                    throw new IllegalArgumentException("Task not found: " + id);
-                }
+        task.setState(Task.State.DONE);
+        task.setEnded(WatchProvider.currentTime());
+        getStore().addTaskTypeDuration(task.getType(), task.getActualDuration());
+        getStore().remove(task);
+        getStore().signalChange();
+        triggerDone(task);
 
-                task.setState(Task.State.DONE);
-                task.setEnded(WatchProvider.currentTime());
-                getStore().addTaskTypeDuration(task.getType(), task.getActualDuration());
-                log.debug("Acked task");
-                getStore().remove(task);
-                getStore().signalChange();
-
-                triggerDone(task);
-                return task;
-            }
-        });
+        if (log.isDebugEnabled()) {
+            log.debug("Acknowledged task: " + task.getId());
+        }
     }
 
     public void failed(final UUID id) throws InterruptedException {
 
-        getStore().isolatedChange(new Callable<T>() {
+        final T task = getStore().get(id);
+        if (task == null) {
+            throw new IllegalArgumentException("Task not found: " + id);
+        }
 
-            @Override
-            public T call() throws Exception {
-                T task = getStore().get(id);
-                if (task == null) {
-                    throw new IllegalArgumentException("Task not found: " + id);
-                }
+        task.setState(State.ERROR);
+        task.setEnded(WatchProvider.currentTime());
 
-                task.setState(State.ERROR);
-                task.setEnded(WatchProvider.currentTime());
+        log.debug("Task marked as failed");
 
-                log.debug("Task marked as failed");
+        int maxRetries = getMaxRetries((Set<String>)task.getTagSet());
+        int attempts = task.getAttempts();
 
-                int maxRetries = getMaxRetries((Set<String>)task.getTagSet());
-                int attempts = task.getAttempts();
-
-                if (maxRetries > attempts) {
-                    getStore().remove(task);
-                    task.reset();
-                    task.setAttempts(attempts + 1);
-                    submit(task);
-                } else {
-                    getStore().failed(task);
-                    getStore().signalChange();
-                    triggerDone(task);
-                }
-
-                return task;
-            }
-        });
+        if (maxRetries > attempts) {
+            getStore().remove(task);
+            task.reset();
+            task.setAttempts(attempts + 1);
+            submit(task);
+        } else {
+            getStore().failed(task);
+            getStore().signalChange();
+            triggerDone(task);
+        }
     }
 
     public void interrupt() {
@@ -350,21 +330,34 @@ public class SmartQ<T extends Task,U>  {
             T selectedTask = null;
 
             while(selectedTask == null) {
+
+                if (log.isDebugEnabled()) {
+                    log.debug(String.format("Running tasks: %s", getStore().runningCount()));
+                    log.debug(String.format("Queue queueSize: %s", getStore().queueSize()));
+                }
+
                 try {
                     selectedTask = getStore().isolatedChange(new Callable<T>() {
                         @Override
                         public T call() throws Exception {
+                            long timeStart = System.currentTimeMillis();
                             CountMap<String> tasksRunning = new CountMap<String>();
-                            log.debug(String.format("Running tasks: %s", getStore().runningCount()));
 
-                            log.debug(String.format("Queue queueSize: %s", getStore().queueSize()));
+                            final Iterator<UUID> queuedIds = tag != null ? getStore().getQueuedIds(tag) : getStore().getQueuedIds();
 
-                            Iterator<T> queued = tag != null ? getStore().getQueued(tag) : getStore().getQueued();
                             T taskLookup = null;
 
                             lookupLoop:
-                            while(queued.hasNext()) {
-                                final T task = queued.next();
+                            while(queuedIds.hasNext()) {
+                                final UUID taskId = queuedIds.next();
+                                final T task = getStore().get(taskId);
+
+                                if (task == null || task.isRunning()) {
+                                    if (log.isDebugEnabled()) {
+                                        log.debug(String.format("Task not found: %s", taskId));
+                                    }
+                                    continue lookupLoop;
+                                }
 
                                 if (isRateLimited(tasksRunning, task)) {
                                     continue lookupLoop;
@@ -374,11 +367,15 @@ public class SmartQ<T extends Task,U>  {
                                 break;
                             }
 
+                            long timeTaken = System.currentTimeMillis() - timeStart;
+
                             if (taskLookup != null) {
-                                log.debug(String.format("Found task %s for tag %s", taskLookup.getId(), tag));
+                                if (log.isDebugEnabled()) {
+                                    log.debug(String.format("Found task %s for tag %s in %s ms", taskLookup.getId(), tag, timeTaken));
+                                }
                                 acquireTask(taskLookup);
-                            } else {
-                                log.debug(String.format("Found no tasks for tag %s", tag));
+                            } else if (log.isDebugEnabled()) {
+                                log.debug(String.format("Found no tasks for tag %s in %s ms", tag, timeTaken));
                             }
 
                             return taskLookup;
@@ -474,7 +471,10 @@ public class SmartQ<T extends Task,U>  {
                     task.reset();
                     getStore().queue(task);
 
-                    log.debug("Requeued task: " + task.getId());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Requeued task: " + task.getId());
+                    }
+
                 }
                 return null;
             }
@@ -489,7 +489,10 @@ public class SmartQ<T extends Task,U>  {
         getStore().run(t);
         triggerAcquire(t);
 
-        log.debug("Acquired task");
+        if (log.isDebugEnabled()) {
+            log.debug("Acquired task: " + t.getId());
+        }
+
     }
 
     public T acquireTask(final UUID taskId) throws InterruptedException {
