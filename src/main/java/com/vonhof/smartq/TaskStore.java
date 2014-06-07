@@ -14,7 +14,7 @@ public interface TaskStore<T extends Task> {
 
     public void remove(UUID id);
 
-    public void queue(T task);
+    public void queue(T ... tasks);
 
     public void run(T task);
 

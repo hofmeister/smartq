@@ -6,8 +6,7 @@ import org.junit.After;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import java.util.Arrays;
-import java.util.Stack;
+import java.util.*;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -849,6 +848,53 @@ public class SmartQTest {
         assertEquals(2000L, estimator.taskStarts(e));
         assertEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
     }
+
+
+    @Test
+    public void can_estimate_a_large_complex_queue() throws InterruptedException {
+
+        System.out.println("Grace period");
+        Thread.sleep(5000);
+
+        System.out.println("Building task list");
+        int size = 20000;
+        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        List<Task> tasks = new LinkedList();
+        for(int i = 0; i < size; i++) {
+            String type = "rate" + (1 + (i % 3));
+            Task t = new Task(type);
+            t.setPriority((int) Math.round(Math.random() * 5));
+            tasks.add(t);
+        }
+
+        System.out.println("Setting up queue");
+        queue.submit(tasks);
+        queue.setRateLimit("rate1", 1);
+        queue.setRateLimit("rate2", 2);
+        queue.setRateLimit("rate3", 2);
+
+        queue.setEstimateForTaskType("rate1", 2000L);
+        queue.setEstimateForTaskType("rate2", 1000L);
+        queue.setEstimateForTaskType("rate3", 2500L);
+        queue.setSubscribers(99);
+
+        System.out.println("Getting task list");
+        Iterator<Task> pending = queue.getStore().getPending();
+
+        QueueEstimator estimator = new QueueEstimator(queue);
+
+        System.out.println("Starting ETA calculation");
+        long start = System.currentTimeMillis();
+        long eta = estimator.queueEnds(pending);
+        long timeTaken = System.currentTimeMillis() - start;
+
+        System.out.println(String.format("Queue will finish in %s ms - and was calculated in %s ms. Free mem: %s",
+                eta, timeTaken, Runtime.getRuntime().freeMemory()));
+    }
+
+
+
+
 
     private static class ThreadedWaiter extends Thread {
         private final TaskStore<Task> store;

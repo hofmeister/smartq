@@ -55,15 +55,17 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized void queue(T task) {
-        task.setState(State.PENDING);
-        tasks.put(task.getId(), task);
+    public synchronized void queue(T ... tasks) {
+        for(T task : tasks) {
+            task.setState(State.PENDING);
+            this.tasks.put(task.getId(), task);
 
-        queuedTasks.add(task);
-        for(String tag : (Set<String>)task.getTagSet()) {
-            queuedTypeCount.increment(tag,1);
+            for(String tag : (Set<String>) task.getTagSet()) {
+                queuedTypeCount.increment(tag,1);
+            }
         }
 
+        queuedTasks.addAll(Arrays.asList(tasks));
         sort(queuedTasks);
     }
 

@@ -39,7 +39,6 @@ public class QueueEstimator<T extends Task> {
         onHold.clear();
         executionOrder.clear();
         time = 0;
-        boolean hasNext = false;
 
         if (queue.getSubscribers() < 1) {
             throw new RuntimeException("Can not estimate queue with no subscribers");
@@ -64,6 +63,7 @@ public class QueueEstimator<T extends Task> {
 
             while(queued.hasNext()) {
                 Task next = new Task(queued.next());
+                next.setData(null); //No need to use mem on this
 
                 //Pick from queue
 
@@ -170,8 +170,8 @@ public class QueueEstimator<T extends Task> {
 
     private boolean canRunAny() throws InterruptedException {
 
-        if (runningTaskCount.total() >= queue.getSubscribers() ||
-                (queue.getConcurrency() > 0 && runningTaskCount.total() >= queue.getConcurrency())) {
+        if (runningTasks.size() >= queue.getSubscribers() ||
+                (queue.getConcurrency() > 0 && runningTasks.size() >= queue.getConcurrency())) {
             return false;
         }
 

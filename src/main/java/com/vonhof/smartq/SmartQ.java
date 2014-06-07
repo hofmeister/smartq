@@ -223,8 +223,9 @@ public class SmartQ<T extends Task,U>  {
                     setRateLimit(entry.getKey(), entry.getValue());
                 }
             }
-            getStore().queue(task);
         }
+
+        getStore().queue(tasks);
 
         getStore().signalChange();
 

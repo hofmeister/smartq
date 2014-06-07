@@ -94,29 +94,32 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public void queue(final T task) {
+    public void queue(final T ... tasks) {
         try {
-            task.setState(State.PENDING);
-            withinTransaction(new Callable<Void>() {
+            for(T task : tasks) {
+                task.setState(State.PENDING);
+            }
 
+            withinTransaction(new Callable<Void>() {
                 @Override
                 public Void call() throws Exception {
-                    client().update(
-                            String.format("INSERT INTO \"%s\" (id, content, state, priority, type) VALUES (?, ?, ?, ?, ?)", tableName),
-                            task.getId(),
-                            documentSerializer.serialize(task).getBytes("UTF-8"),
-                            STATE_QUEUED,
-                            task.getPriority(),
-                            task.getType()
-                    );
-
-                    for (String tag : (Set<String>) task.getTags().keySet()) {
+                    for(T task : tasks) {
                         client().update(
-                                String.format("INSERT INTO \"%s_tags\" (id, tag) VALUES (?, ?)", tableName),
-                                task.getId(), tag
+                                String.format("INSERT INTO \"%s\" (id, content, state, priority, type) VALUES (?, ?, ?, ?, ?)", tableName),
+                                task.getId(),
+                                documentSerializer.serialize(tasks).getBytes("UTF-8"),
+                                STATE_QUEUED,
+                                task.getPriority(),
+                                task.getType()
                         );
-                    }
 
+                        for (String tag : (Set<String>) task.getTags().keySet()) {
+                            client().update(
+                                    String.format("INSERT INTO \"%s_tags\" (id, tag) VALUES (?, ?)", tableName),
+                                    task.getId(), tag
+                            );
+                        }
+                    }
                     return null;
                 }
             });

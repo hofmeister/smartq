@@ -8,6 +8,7 @@ import java.util.Set;
 public class CountMap<T>  {
 
     private final Map<T,Long> map = new HashMap<T, Long>();
+    private long total;
 
 
     private void ensureKey(T key) {
@@ -16,42 +17,39 @@ public class CountMap<T>  {
         }
     }
 
-    public synchronized long increment(T key, long count) {
+    public long increment(T key, long count) {
         ensureKey(key);
 
         count = map.get(key) + count;
         map.put(key, count);
+        total += count;
 
         return count;
     }
 
-    public synchronized long decrement(T key, long count) {
+    public long decrement(T key, long count) {
         ensureKey(key);
 
         count = map.get(key) - count;
         map.put(key, count);
+        total -= count;
 
         return count;
     }
 
-    public synchronized void set(T key, long count) {
+    public void set(T key, long count) {
         map.put(key, count);
     }
 
-    public synchronized long get(T key) {
-
-        if (!map.containsKey(key)) {
+    public long get(T key) {
+        Long val = map.get(key);
+        if (val == null) {
             return 0L;
         }
-
-        return map.get(key);
+        return val;
     }
 
     public long total() {
-        long total = 0;
-        for(Long count: map.values()) {
-            total += count;
-        }
         return total;
     }
 
