@@ -108,6 +108,7 @@ public class PostgresTaskStore implements TaskStore {
                     CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type, referenceid, created) FROM STDIN WITH DELIMITER '|'", tableName));
 
                     for (Task task : tasks) {
+
                         task = new Task(task);//Copy
                         task.setState(State.PENDING);
 
@@ -443,6 +444,7 @@ public class PostgresTaskStore implements TaskStore {
     public void close() throws Exception {
         closed = true;
         client().close();
+        client.remove();
     }
 
     @Override
@@ -1056,7 +1058,7 @@ public class PostgresTaskStore implements TaskStore {
                         try {
                             wait(1000);
                         } catch (InterruptedException e) {
-                            break;
+                            return;
                         }
                     }
                 }

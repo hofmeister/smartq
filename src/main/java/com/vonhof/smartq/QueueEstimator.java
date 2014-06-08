@@ -230,8 +230,8 @@ public class QueueEstimator {
 
 
     private void markAsRunning(TaskInfo task) {
-        if (log.isDebugEnabled()) {
-            log.debug(String.format("Marking %s as running at %s", task, time));
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("Marking %s as running at %s", task, time));
         }
 
         runningTasks.add(task);
@@ -255,8 +255,8 @@ public class QueueEstimator {
             return;
         }
 
-        if (log.isDebugEnabled()) {
-            log.debug(String.format("Marking %s as done at %s", task, endTime));
+        if (log.isTraceEnabled()) {
+            log.trace(String.format("Marking %s as done at %s", task, endTime));
         }
 
         task.setEnded(endTime);
