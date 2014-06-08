@@ -943,7 +943,7 @@ public class SmartQTest {
         long submitTook = System.currentTimeMillis() - beforeSubmit;
         System.out.println(String.format("Spent %s ms on inserting %s tasks",submitTook, totalSize));
         if (queue.getStore() instanceof PostgresTaskStore) {
-            assertTrue("For a factor = 100 this should be around less than 2300ms", submitTook < 2300L);
+            assertTrue("For a factor = 100 this should be around less than 2300ms", submitTook < 2800L);
         } else if (queue.getStore() instanceof MemoryTaskStore) {
             assertTrue("For a factor = 100 this should be around less than 200ms", submitTook < 400L);
         } else if (queue.getStore() instanceof WriteThroughTaskStore) {

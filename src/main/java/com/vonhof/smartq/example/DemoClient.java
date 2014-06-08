@@ -18,9 +18,9 @@ public class DemoClient {
         int subscriberCount = 15;
 
         for(int i = 0 ; i < subscriberCount; i++) {
-            new SmartQClient<Task>(DemoServer.ADDRESS,new SmartQClientMessageHandler<Task>() {
+            new SmartQClient(DemoServer.ADDRESS,new SmartQClientMessageHandler() {
                 @Override
-                public void taskReceived(SmartQClient<Task> subscriber, Task task) throws Exception {
+                public void taskReceived(SmartQClient subscriber, Task task) throws Exception {
                     try {
                         Thread.sleep(5000 + (int)(5000 * Math.random()));
                     } catch (InterruptedException e) {

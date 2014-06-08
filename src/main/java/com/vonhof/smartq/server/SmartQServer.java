@@ -75,12 +75,12 @@ public class SmartQServer {
         return queue;
     }
 
-    public SmartQClient<Task> makeClient() {
-        return new SmartQClient<Task>(address);
+    public SmartQClient makeClient() {
+        return new SmartQClient(address);
     }
 
-    public SmartQClient<Task> makeClient(SmartQClientMessageHandler<Task> handler) {
-        return new SmartQClient<Task>(address, handler, 1);
+    public SmartQClient makeClient(SmartQClientMessageHandler handler) {
+        return new SmartQClient(address, handler, 1);
     }
 
     public synchronized void listen() throws IOException {
@@ -105,7 +105,6 @@ public class SmartQServer {
         taskEmitter.start();
 
         timer.scheduleAtFixedRate(new StaleTaskMonitor(),60000,300000);
-
     }
 
     public synchronized void close()  {
@@ -299,12 +298,12 @@ public class SmartQServer {
 
                         queue.setSubscribers(subscriberCount.incrementAndGet());
 
-                        if (log.isDebugEnabled()) {
-                            log.debug(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: %s",session.getRemoteAddress(), getTaskLimit(session), queue.getSubscribers()));
+                        if (log.isInfoEnabled()) {
+                            log.info(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: %s",session.getRemoteAddress(), getTaskLimit(session), queue.getSubscribers()));
                         }
                     } else {
-                        if (log.isTraceEnabled()) {
-                            log.trace("Session already found: " + session.getId());
+                        if (log.isInfoEnabled()) {
+                            log.info("Session already found: " + session.getId());
                         }
                     }
                     break;
@@ -367,8 +366,8 @@ public class SmartQServer {
                 clientCount.incrementAndGet();
 
                 clientTask.put(session.getRemoteAddress(), Collections.synchronizedList(new ArrayList<UUID>()));
-                if (log.isDebugEnabled()) {
-                    log.debug("Got new client on " + session.getRemoteAddress() + ".");
+                if (log.isInfoEnabled()) {
+                    log.info("Got new client on " + session.getRemoteAddress() + ". Subscribers: " + clientCount.get());
                 }
             }
 
@@ -391,16 +390,16 @@ public class SmartQServer {
 
                 for(UUID taskId : clientTask.get(session.getRemoteAddress())) {
                     queue.cancel(taskId, true);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Rescheduled task: " + taskId);
+                    if (log.isInfoEnabled()) {
+                        log.info("Rescheduled task: " + taskId);
                     }
                 }
 
                 clientTask.remove(session.getRemoteAddress());
                 clientTaskLimit.remove(session.getRemoteAddress());
 
-                if (log.isDebugEnabled()) {
-                    log.debug(String.format("Client connection dropped %s. Subscribers: ",session.getRemoteAddress(), queue.getSubscribers()));
+                if (log.isInfoEnabled()) {
+                    log.info(String.format("Client connection dropped %s. Subscribers: %s",session.getRemoteAddress(), queue.getSubscribers()));
                 }
 
             }
@@ -457,14 +456,14 @@ public class SmartQServer {
                 if (sessionOffset >= managedSessions.size()) {
                     sessionOffset = 0;
                     synchronized (this) {
-                        if (log.isDebugEnabled()) {
-                            log.debug("Waiting for new sessions to become available");
+                        if (log.isInfoEnabled()) {
+                            log.info("Waiting for new sessions to become available");
                         }
                         wait();
                     }
 
-                    if (log.isDebugEnabled()) {
-                        log.debug("Got new sessions - refreshing session list");
+                    if (log.isInfoEnabled()) {
+                        log.info("Got new sessions - refreshing session list");
                     }
                     managedSessions = new LinkedList<IoSession>(acceptor.getManagedSessions().values());
                     continue;

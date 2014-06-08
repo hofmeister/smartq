@@ -27,7 +27,7 @@ import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-public class SmartQClient<T extends Task> {
+public class SmartQClient {
 
     private static final Logger log = Logger.getLogger(SmartQClient.class);
 
@@ -43,7 +43,7 @@ public class SmartQClient<T extends Task> {
     private int connectionTimeout = 30000;
     private int retryTimeout = 5000;
 
-    private final SmartQClientMessageHandler<T> responseHandler;
+    private final SmartQClientMessageHandler responseHandler;
 
     private final Set<UUID> activeTaskIds = Collections.synchronizedSet(new HashSet<UUID>());
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
@@ -67,7 +67,7 @@ public class SmartQClient<T extends Task> {
      * @param responseHandler the handler will receive all tasks
      * @param threads Determines how many concurrent tasks can be handled. Defaults to available processors
      */
-    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler<T> responseHandler, int threads) {
+    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler responseHandler, int threads) {
         id = UUID.randomUUID();
         this.hostAddress = hostAddress;
         this.responseHandler = responseHandler;
@@ -92,7 +92,7 @@ public class SmartQClient<T extends Task> {
      * @param hostAddress host to connect to
      * @param responseHandler the handler will receive all tasks
      */
-    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler<T> responseHandler) {
+    public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler responseHandler) {
         this(hostAddress, responseHandler, Runtime.getRuntime().availableProcessors());
     }
 
@@ -140,8 +140,8 @@ public class SmartQClient<T extends Task> {
             future.await(connectionTimeout);
             session = future.getSession();
 
-            if (log.isDebugEnabled()) {
-                log.debug("Connected to " + hostAddress + " - " + this);
+            if (log.isInfoEnabled()) {
+                log.info("Connected to " + hostAddress + " - " + this);
             }
 
             if (!reconnecting) {
@@ -155,7 +155,17 @@ public class SmartQClient<T extends Task> {
 
             connector = null;
             session = null;
-            throw new IOException("Could not connect to "+hostAddress,e);
+
+            if (retryTimeout > 1) {
+                if (log.isInfoEnabled()) {
+                    log.info("Failed to connect to " + hostAddress + ". Trying again in " + retryTimeout + "ms");
+                }
+
+                synchronized (this) {
+                    wait(retryTimeout);
+                }
+                connect();
+            }
 
         }
     }
@@ -177,8 +187,8 @@ public class SmartQClient<T extends Task> {
         if (connector != null) {
             connector.dispose(false);
             if (!reconnecting) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Disconnected from " + hostAddress + " - " + this);
+                if (log.isInfoEnabled()) {
+                    log.info("Disconnected from " + hostAddress + " - " + this);
                 }
             }
         }
@@ -237,7 +247,7 @@ public class SmartQClient<T extends Task> {
         }.start();
     }
 
-    public void publish(T task) throws InterruptedException {
+    public void publish(Task task) throws InterruptedException {
         send(new Command(Type.PUBLISH, task));
     }
 
@@ -257,8 +267,8 @@ public class SmartQClient<T extends Task> {
             return;
         }
         if (!activeTaskIds.isEmpty()) {
-            if (log.isDebugEnabled()) {
-                log.debug("Sending recover request to newly opened host: " + activeTaskIds.size());
+            if (log.isInfoEnabled()) {
+                log.info("Sending recover request to newly opened host: " + activeTaskIds.size());
             }
 
             if (!send(new Command(Type.RECOVER, new UUIDList(activeTaskIds)))) {
@@ -385,7 +395,7 @@ public class SmartQClient<T extends Task> {
                 log.trace("Message received: " + message);
             }
             if (message instanceof Task) {
-                final T task = (T) message;
+                final Task task = (Task) message;
 
                 if (log.isDebugEnabled()) {
                     log.debug("Processing task: " + task.getId() + " on " + SmartQClient.this);

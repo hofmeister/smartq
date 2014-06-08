@@ -2,6 +2,7 @@ package com.vonhof.smartq;
 
 
 import com.vonhof.smartq.Task.State;
+import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
 import org.postgresql.PGConnection;
@@ -105,7 +106,7 @@ public class PostgresTaskStore implements TaskStore {
                 @Override
                 public Object call() throws Exception {
                     CopyManager taskCopy = new CopyManager((BaseConnection) client().connection);
-                    CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type, referenceid, created) FROM STDIN WITH DELIMITER '|'", tableName));
+                    CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type, referenceid, created) FROM STDIN WITH DELIMITER AS '|' CSV ESCAPE AS '\\' ENCODING 'UTF-8'", tableName));
 
                     for (Task task : tasks) {
 
@@ -114,9 +115,9 @@ public class PostgresTaskStore implements TaskStore {
 
                         StringBuilder taskRowBuilder = new StringBuilder();
                         taskRowBuilder.append(task.getId());
-                        taskRowBuilder.append("|");
-                        taskRowBuilder.append(documentSerializer.serialize(task));
-                        taskRowBuilder.append("|");
+                        taskRowBuilder.append("|\"");
+                        taskRowBuilder.append(new String(serialize(task),"UTF-8"));
+                        taskRowBuilder.append("\"|");
                         taskRowBuilder.append(STATE_QUEUED);
                         taskRowBuilder.append("|");
                         taskRowBuilder.append(task.getPriority());
@@ -169,13 +170,19 @@ public class PostgresTaskStore implements TaskStore {
         }
     }
 
+    private byte[] serialize(Task task) throws IOException {
+        String json = documentSerializer.serialize(task);
+        byte[] bytes = json.getBytes(Charset.forName("UTF-8"));
+        return Base64.encodeBase64(bytes);
+    }
+
     @Override
     public void run(Task task) {
         try {
             task.setState(State.RUNNING);
             client().update(
                     String.format("UPDATE \"%s\" SET content = ?,state = ? WHERE id = ?", tableName),
-                    documentSerializer.serialize(task).getBytes("UTF-8"),
+                    serialize(task),
                     STATE_RUNNING,
                     task.getId());
         } catch (Exception e) {
@@ -189,7 +196,7 @@ public class PostgresTaskStore implements TaskStore {
             task.setState(State.ERROR);
             client().update(
                     String.format("UPDATE \"%s\" SET content = ?,state = ? WHERE id = ?", tableName),
-                    documentSerializer.serialize(task).getBytes("UTF-8"),
+                    serialize(task),
                     STATE_ERROR,
                     task.getId());
         } catch (Exception e) {
@@ -436,6 +443,7 @@ public class PostgresTaskStore implements TaskStore {
     }
 
     public synchronized void dropTable() throws SQLException {
+        client().update(String.format("DROP TABLE \"%s_estimates\"", tableName));
         client().update(String.format("DROP TABLE \"%s_tags\"", tableName));
         client().update(String.format("DROP TABLE \"%s\"", tableName));
     }
@@ -1012,9 +1020,9 @@ public class PostgresTaskStore implements TaskStore {
         public Task mapRow(PreparedStatement stmt, ResultSet result) throws SQLException {
             UUID id = (UUID) result.getObject("id");
             try {
-                String contents = IOUtils.toString(result.getBinaryStream("content"), "UTF-8");
-                return documentSerializer.deserialize(contents, taskClass);
-            } catch (IOException e) {
+                byte[] contents = Base64.decodeBase64(result.getBytes("content"));
+                return documentSerializer.deserialize(new String(contents, "UTF8"), taskClass);
+            } catch (Exception e) {
                 throw new RuntimeException(e);
             }
         }
