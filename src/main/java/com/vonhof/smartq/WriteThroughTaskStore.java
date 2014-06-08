@@ -14,7 +14,6 @@ public class WriteThroughTaskStore implements TaskStore {
     private final LinkedList<Runnable> tasks = new LinkedList<>();
     private final WorkerQueue workerQueue = new WorkerQueue();
     private volatile boolean closed = false;
-    private volatile Exception lastException;
 
     public WriteThroughTaskStore(PostgresTaskStore diskStore) {
         this.memStore = new MemoryTaskStore();
@@ -234,10 +233,6 @@ public class WriteThroughTaskStore implements TaskStore {
 
         diskStore.close();
         memStore.close();
-
-        if (lastException != null) {
-            throw lastException;
-        }
     }
 
     @Override
@@ -299,9 +294,7 @@ public class WriteThroughTaskStore implements TaskStore {
                     try {
                         task.run();
                     } catch (Exception e) {
-                        lastException = e;
                         log.error("Async task failed", e);
-                        return;
                     }
                 }
 
