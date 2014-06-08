@@ -8,13 +8,12 @@ import java.util.*;
 public class QueueEstimator<T extends Task> {
     private final static Logger log = Logger.getLogger(QueueEstimator.class);
 
+    private long time = 0;
     private final SmartQ queue;
     private final TaskStore store;
-    private List<TaskInfo> runningTasks = new LinkedList<TaskInfo>();
+    private List<TaskInfo> runningTasks = new LinkedList<>();
     private List<TaskInfo> onHold = new ArrayList<>(1000);
-    private List<TaskInfo> executionOrder = new LinkedList<TaskInfo>();
-    private long time = 0;
-
+    private List<TaskInfo> executionOrder = new LinkedList<>();
     private FastCountMap runningTaskCount;
     private FastCountMap concurrencyCache;
     private FastCountMap estimates;
