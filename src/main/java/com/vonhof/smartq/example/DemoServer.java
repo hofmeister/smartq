@@ -13,8 +13,8 @@ public class DemoServer {
     public static final InetSocketAddress ADDRESS = new InetSocketAddress("127.0.0.1",54321);
 
 
-    private static TaskStore<Task> makePGStore() throws SQLException, IOException {
-        PostgresTaskStore<Task> store = new PostgresTaskStore<Task>(Task.class);
+    private static TaskStore makePGStore() throws SQLException, IOException {
+        PostgresTaskStore store = new PostgresTaskStore(Task.class);
         store.setTableName("demo_queue");
         store.createTable();
         return store;
@@ -23,13 +23,13 @@ public class DemoServer {
     public static void main(String[] args) throws IOException, InterruptedException, SQLException {
         PropertyConfigurator.configure("log4j.properties");
 
-        TaskStore<Task> store = makePGStore();
+        TaskStore store = makePGStore();
 
-        final SmartQ<Task, DefaultTaskResult> queue = new SmartQ<Task, DefaultTaskResult>(store);
+        final SmartQ<DefaultTaskResult> queue = new SmartQ<DefaultTaskResult>(store);
 
         //queue.requeueAll(); //If any was left as running - move them back to queue.
 
-        final SmartQServer<Task> publisher = new SmartQServer<Task>(ADDRESS, queue);
+        final SmartQServer publisher = new SmartQServer(ADDRESS, queue);
 
         publisher.listen();
 

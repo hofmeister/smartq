@@ -13,11 +13,11 @@ import java.util.UUID;
 
 public class PostgresClientServerTest extends ClientServerTest {
 
-    private PostgresTaskStore<Task> store = null;
+    private PostgresTaskStore store = null;
 
     @Before
     public void setup() throws IOException, SQLException {
-        store = new PostgresTaskStore<Task>(Task.class);
+        store = new PostgresTaskStore(Task.class);
         store.setTableName("queue_"+ UUID.randomUUID().toString().replaceAll("-", ""));
         store.createTable();
     }
@@ -28,7 +28,7 @@ public class PostgresClientServerTest extends ClientServerTest {
         store.close();
     }
 
-    protected TaskStore<Task> makeStore()  {
+    protected TaskStore makeStore()  {
         return store;
     }
 }

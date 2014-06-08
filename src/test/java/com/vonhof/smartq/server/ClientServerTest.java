@@ -29,36 +29,36 @@ public class ClientServerTest {
         return new InetSocketAddress("127.0.0.1",port);
     }
 
-    protected synchronized TaskStore<Task> makeStore() {
-        return new MemoryTaskStore<Task>();
+    protected synchronized TaskStore makeStore() {
+        return new MemoryTaskStore();
     }
 
-    protected synchronized SmartQ<Task,DefaultTaskResult> makeQueue() {
-        return new SmartQ<Task, DefaultTaskResult>(makeStore());
+    protected synchronized SmartQ<DefaultTaskResult> makeQueue() {
+        return new SmartQ<DefaultTaskResult>(makeStore());
     }
 
     protected synchronized SocketProxy makeProxy() throws Exception {
         return new SocketProxy(generateAddress(), generateAddress());
     }
 
-    protected synchronized SmartQServer<Task> makeServer() {
+    protected synchronized SmartQServer makeServer() {
         return makeServer(generateAddress());
     }
 
-    protected synchronized SmartQServer<Task> makeServer(InetSocketAddress address) {
-        return new SmartQServer<Task>(address,makeQueue());
+    protected synchronized SmartQServer makeServer(InetSocketAddress address) {
+        return new SmartQServer(address,makeQueue());
     }
 
 
 
     @Test
     public void can_acquire_over_the_wire() throws IOException, InterruptedException {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
-        final SmartQClient<Task> client = server.makeClient(msgHandler);
+        final SmartQClient client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
 
@@ -101,12 +101,12 @@ public class ClientServerTest {
 
     @Test
     public void client_supports_auto_acknowledge() throws IOException, InterruptedException {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
-        final SmartQClient<Task> client = server.makeClient(msgHandler);
+        final SmartQClient client = server.makeClient(msgHandler);
         client.setAutoAcknowledge(true);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
@@ -136,12 +136,12 @@ public class ClientServerTest {
 
     @Test
     public void can_cancel_over_the_wire() throws IOException, InterruptedException {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
-        final SmartQClient<Task> client = server.makeClient(msgHandler);
+        final SmartQClient client = server.makeClient(msgHandler);
 
         final Task task1 = new Task("test").withId(UUID.randomUUID());
         final Task task2 = new Task("test").withId(UUID.randomUUID());
@@ -209,12 +209,12 @@ public class ClientServerTest {
 
     @Test
     public void client_disconnect_causes_auto_retry() throws IOException, InterruptedException {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
-        final SmartQClient<Task> client = server.makeClient(msgHandler);
+        final SmartQClient client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
 
@@ -257,12 +257,12 @@ public class ClientServerTest {
 
     @Test
     public void client_unhandled_exception_causes_auto_cancel() throws IOException, InterruptedException {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final ExceptionClientMessageHandler msgHandler = new ExceptionClientMessageHandler();
-        final SmartQClient<Task> client = server.makeClient(msgHandler);
+        final SmartQClient client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
 
@@ -294,12 +294,12 @@ public class ClientServerTest {
 
     @Test
     public void client_unhandled_exception_causes_retry_if_allowed() throws IOException, InterruptedException {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final ControllableExceptionClientMessageHandler msgHandler = new ControllableExceptionClientMessageHandler();
-        final SmartQClient<Task> client = server.makeClient(msgHandler);
+        final SmartQClient client = server.makeClient(msgHandler);
 
         final Task task = new Task("test").withId(UUID.randomUUID());
         queue.setMaxRetries("test", 2);
@@ -354,12 +354,12 @@ public class ClientServerTest {
     @Test
      public void when_server_goes_away_it_moves_running_to_queued_when_restarted() throws Exception {
         final SocketProxy proxy = makeProxy();
-        final SmartQServer<Task> server = makeServer(proxy.getTarget());
+        final SmartQServer server = makeServer(proxy.getTarget());
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
-        final SmartQClient<Task> client = new SmartQClient<Task>(proxy.getAddress(), msgHandler, 1);
+        final SmartQClient client = new SmartQClient(proxy.getAddress(), msgHandler, 1);
 
         client.setRetryTimeout(100);
 
@@ -395,7 +395,7 @@ public class ClientServerTest {
         assertEquals("Queue size is not affected", 1, queue.queueSize());
         assertEquals(0, queue.runningCount());
 
-        SmartQServer<Task> newServer = new SmartQServer<Task>(proxy.getTarget(), queue);
+        SmartQServer newServer = new SmartQServer(proxy.getTarget(), queue);
 
         newServer.listen();
         proxy.reopen();
@@ -418,14 +418,14 @@ public class ClientServerTest {
 
     @Test
     public void multiple_clients_are_supported() throws Exception {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
-        final SmartQ<Task, ?> queue = server.getQueue();
+        final SmartQ<?> queue = server.getQueue();
 
         final MultiClientMessageHandler msgHandler = new MultiClientMessageHandler();
-        final SmartQClient<Task> client1 = server.makeClient(msgHandler);
-        final SmartQClient<Task> client2 = server.makeClient(msgHandler);
-        final SmartQClient<Task> client3 = server.makeClient(msgHandler);
+        final SmartQClient client1 = server.makeClient(msgHandler);
+        final SmartQClient client2 = server.makeClient(msgHandler);
+        final SmartQClient client3 = server.makeClient(msgHandler);
 
 
         final Task task1 = new Task("test").withId(UUID.randomUUID());
@@ -470,13 +470,13 @@ public class ClientServerTest {
 
     @Test
     public void clients_can_publish_tasks() throws Exception {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
         final ControllableExceptionClientMessageHandler msgHandler = new ControllableExceptionClientMessageHandler();
         msgHandler.setThrowing(false);
 
-        final SmartQClient<Task> clientPublisher = server.makeClient();
-        final SmartQClient<Task> clientSubscriber = server.makeClient(msgHandler);
+        final SmartQClient clientPublisher = server.makeClient();
+        final SmartQClient clientSubscriber = server.makeClient(msgHandler);
 
         final Task task1 = new Task("test").withId(UUID.randomUUID());
 
@@ -529,12 +529,12 @@ public class ClientServerTest {
 
     @Test
     public void large_tasks_are_supported() throws Exception {
-        final SmartQServer<Task> server = makeServer();
+        final SmartQServer server = makeServer();
 
         final HappyClientMessageHandler msgHandler = new HappyClientMessageHandler();
 
-        final SmartQClient<Task> clientPublisher = server.makeClient();
-        final SmartQClient<Task> clientSubscriber = server.makeClient(msgHandler);
+        final SmartQClient clientPublisher = server.makeClient();
+        final SmartQClient clientSubscriber = server.makeClient(msgHandler);
 
         final Task task1 = new Task("test").withId(UUID.randomUUID());
         task1.setData(new byte[25000]);
@@ -570,14 +570,14 @@ public class ClientServerTest {
     }
 
 
-    public static class MultiClientMessageHandler implements SmartQClientMessageHandler<Task> {
+    public static class MultiClientMessageHandler implements SmartQClientMessageHandler {
 
         private int done = 0;
         private List<UUID> taskIds = new ArrayList<UUID>();
-        private Map<UUID,SmartQClient<Task>> clientMap = new HashMap<UUID, SmartQClient<Task>>();
+        private Map<UUID,SmartQClient> clientMap = new HashMap<UUID, SmartQClient>();
 
         @Override
-        public void taskReceived(SmartQClient<Task> client, Task task) {
+        public void taskReceived(SmartQClient client, Task task) {
             try {
                 clientMap.put(task.getId(), client);
                 taskIds.add(task.getId());
@@ -593,14 +593,14 @@ public class ClientServerTest {
         }
     }
 
-    public static class HappyClientMessageHandler implements SmartQClientMessageHandler<Task> {
+    public static class HappyClientMessageHandler implements SmartQClientMessageHandler {
 
         private boolean done = false;
         private boolean failed = false;
         private Task task;
 
         @Override
-        public void taskReceived(SmartQClient<Task> client, Task task) {
+        public void taskReceived(SmartQClient client, Task task) {
             try {
                 this.task = task;
                 Thread.sleep(100); //Do some work
@@ -619,19 +619,19 @@ public class ClientServerTest {
         }
     }
 
-    public static class ExceptionClientMessageHandler implements SmartQClientMessageHandler<Task> {
+    public static class ExceptionClientMessageHandler implements SmartQClientMessageHandler {
 
         private Task task;
 
         @Override
-        public void taskReceived(SmartQClient<Task> client, Task task) throws Exception {
+        public void taskReceived(SmartQClient client, Task task) throws Exception {
             this.task = task;
             Thread.sleep(100); //Do some work
             throw new Exception("Something went wrong");
         }
     }
 
-    public static class ControllableExceptionClientMessageHandler implements SmartQClientMessageHandler<Task> {
+    public static class ControllableExceptionClientMessageHandler implements SmartQClientMessageHandler {
 
         private Task task;
 
@@ -655,7 +655,7 @@ public class ClientServerTest {
         }
 
         @Override
-        public void taskReceived(SmartQClient<Task> client, Task task) throws Exception {
+        public void taskReceived(SmartQClient client, Task task) throws Exception {
             this.task = task;
             synchronized (this) {
                 wait();

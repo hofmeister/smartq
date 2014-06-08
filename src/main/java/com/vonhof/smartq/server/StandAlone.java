@@ -31,21 +31,21 @@ public class StandAlone {
 
         String storeType = props.getProperty("store.type", "pg");
 
-        TaskStore<Task> taskStore = null;
+        TaskStore taskStore = null;
         if ("pg".equalsIgnoreCase(storeType)) {
-            taskStore = new PostgresTaskStore<Task>(Task.class,
+            taskStore = new PostgresTaskStore(Task.class,
                     props.getProperty("pg.url","jdbc:postgresql://localhost/smartq"),
                     props.getProperty("pg.username","postgres"),
                     props.getProperty("pg.password",""));
         } else if ("memory".equalsIgnoreCase(storeType) || storeType.isEmpty()) {
-            taskStore = new MemoryTaskStore<Task>();
+            taskStore = new MemoryTaskStore();
         } else {
             throw new IllegalArgumentException("Unknown task store type: " + storeType);
         }
 
-        SmartQ<Task,Serializable> smartQ = new SmartQ<Task,Serializable>(taskStore);
+        SmartQ<Serializable> smartQ = new SmartQ<Serializable>(taskStore);
 
-        SmartQServer<Task> server = new SmartQServer<Task>(serverAddress, smartQ);
+        SmartQServer server = new SmartQServer(serverAddress, smartQ);
 
         server.listen();
     }

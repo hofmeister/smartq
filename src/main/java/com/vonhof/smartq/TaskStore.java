@@ -6,33 +6,33 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 
-public interface TaskStore<T extends Task> {
+public interface TaskStore {
 
-    public T get(UUID id);
+    public Task get(UUID id);
 
-    public void remove(T task);
+    public void remove(Task task);
 
     public void remove(UUID id);
 
-    public void queue(T ... tasks);
+    public void queue(Task ... tasks);
 
-    public void run(T task);
+    public void run(Task task);
 
-    public void failed(T task);
+    public void failed(Task task);
 
-    public Iterator<T> getFailed();
+    public Iterator<Task> getFailed();
 
-    public Iterator<T> getQueued();
+    public Iterator<Task> getQueued();
 
-    public Iterator<T> getQueued(String type);
+    public Iterator<Task> getQueued(String type);
 
     public Iterator<UUID> getQueuedIds();
 
     public Iterator<UUID> getQueuedIds(String type);
 
-    public Iterator<T> getRunning();
+    public Iterator<Task> getRunning();
 
-    public Iterator<T> getRunning(String type);
+    public Iterator<Task> getRunning(String type);
 
     public long queueSize() throws InterruptedException;
 
@@ -50,9 +50,9 @@ public interface TaskStore<T extends Task> {
 
     public void signalChange();
 
-    ParallelIterator<T> getPending();
+    ParallelIterator<Task> getPending();
 
-    ParallelIterator<T> getPending(String tag);
+    ParallelIterator<Task> getPending(String tag);
 
     long getTaskTypeEstimate(String type);
 

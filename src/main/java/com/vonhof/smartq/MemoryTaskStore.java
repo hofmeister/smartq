@@ -10,12 +10,12 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 
-public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
+public class MemoryTaskStore implements TaskStore {
     private static final Logger log = Logger.getLogger(MemoryTaskStore.class);
-    private final Map<UUID, T> tasks = new ConcurrentHashMap<UUID, T>();
-    private final List<T> queuedTasks = Collections.synchronizedList(new LinkedList<T>());
-    private final List<T> runningTasks = Collections.synchronizedList(new LinkedList<T>());
-    private final List<T> failedTasks = Collections.synchronizedList(new LinkedList<T>());
+    private final Map<UUID, Task> tasks = new ConcurrentHashMap<UUID, Task>();
+    private final List<Task> queuedTasks = Collections.synchronizedList(new LinkedList<Task>());
+    private final List<Task> runningTasks = Collections.synchronizedList(new LinkedList<Task>());
+    private final List<Task> failedTasks = Collections.synchronizedList(new LinkedList<Task>());
     private final CountMap<String> runningTypeCount = new CountMap<String>();
     private final CountMap<String> queuedTypeCount = new CountMap<String>();
     private EstimateMap<String> typeEstimate = new EstimateMap<String>();
@@ -31,14 +31,30 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
 
     private volatile UUID tid = null;
 
+    public synchronized void resetQueues() throws InterruptedException {
+        isolatedChange(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                tasks.clear();
+                queuedTasks.clear();
+                runningTasks.clear();
+                failedTasks.clear();
+                runningTypeCount.clear();
+                queuedTypeCount.clear();
+
+                return null;
+            }
+        });
+    }
+
 
     @Override
-    public synchronized T get(UUID id) {
+    public synchronized Task get(UUID id) {
         return tasks.get(id);
     }
 
     @Override
-    public synchronized void remove(T task) {
+    public synchronized void remove(Task task) {
         tasks.remove(task.getId());
         queuedTasks.remove(task);
         runningTasks.remove(task);
@@ -55,8 +71,8 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized void queue(T ... tasks) {
-        for(T task : tasks) {
+    public synchronized void queue(Task ... tasks) {
+        for(Task task : tasks) {
             task.setState(State.PENDING);
             this.tasks.put(task.getId(), task);
 
@@ -70,7 +86,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized void run(T task) {
+    public synchronized void run(Task task) {
         task.setState(State.RUNNING);
         queuedTasks.remove(task);
         runningTasks.add(task);
@@ -85,7 +101,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized void failed(T task) {
+    public synchronized void failed(Task task) {
         task.setState(State.ERROR);
         remove(task);
         tasks.put(task.getId(),task);
@@ -93,22 +109,22 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized Iterator<T> getFailed() {
-        return Collections.unmodifiableList(new LinkedList<T>(failedTasks)).iterator();
+    public synchronized Iterator<Task> getFailed() {
+        return Collections.unmodifiableList(new LinkedList<Task>(failedTasks)).iterator();
     }
 
     @Override
-    public synchronized Iterator<T> getQueued() {
-        return Collections.unmodifiableList(new LinkedList<T>(queuedTasks)).iterator();
+    public synchronized Iterator<Task> getQueued() {
+        return Collections.unmodifiableList(new LinkedList<Task>(queuedTasks)).iterator();
     }
 
     @Override
-    public synchronized ParallelIterator<T> getPending() {
-        return new CombinedIterator<T>(runningCount() + queueSize(),getRunning(), getQueued());
+    public synchronized ParallelIterator<Task> getPending() {
+        return new CombinedIterator<Task>(runningCount() + queueSize(),getRunning(), getQueued());
     }
 
     @Override
-    public synchronized ParallelIterator<T> getPending(String tag) {
+    public synchronized ParallelIterator<Task> getPending(String tag) {
         return new CombinedIterator(runningCount(tag) + queueSize(tag), getRunning(tag), getQueued(tag));
     }
 
@@ -133,9 +149,9 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public Iterator<T> getQueued(String type) {
-        List<T> out = new LinkedList<T>();
-        for(T task : queuedTasks) {
+    public Iterator<Task> getQueued(String type) {
+        List<Task> out = new LinkedList<Task>();
+        for(Task task : queuedTasks) {
             if (task.getTags().containsKey(type)) {
                 out.add(task);
             }
@@ -148,7 +164,7 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public Iterator<UUID> getQueuedIds() {
         List<UUID> out = new LinkedList<UUID>();
-        Iterator<T> queued = getQueued();
+        Iterator<Task> queued = getQueued();
         while(queued.hasNext()) {
             out.add(queued.next().getId());
         }
@@ -158,21 +174,21 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public Iterator<UUID> getQueuedIds(String type) {
         List<UUID> out = new LinkedList<UUID>();
-        Iterator<T> queued = getQueued(type);
+        Iterator<Task> queued = getQueued(type);
         while(queued.hasNext()) {
             out.add(queued.next().getId());
         }
         return out.iterator();
     }
 
-    public synchronized Iterator<T> getRunning() {
-        return Collections.unmodifiableList(new LinkedList<T>(runningTasks)).iterator();
+    public synchronized Iterator<Task> getRunning() {
+        return Collections.unmodifiableList(new LinkedList<Task>(runningTasks)).iterator();
     }
 
     @Override
-    public Iterator<T> getRunning(String type) {
-        List<T> out = new LinkedList<T>();
-        for(T task : runningTasks) {
+    public Iterator<Task> getRunning(String type) {
+        List<Task> out = new LinkedList<Task>();
+        for(Task task : runningTasks) {
             if (task.getTags().containsKey(type)) {
                 out.add(task);
             }
@@ -246,10 +262,10 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
 
-    private void sort(List<T> tasks) {
-        Collections.sort(tasks,new Comparator<T>() {
+    private void sort(List<Task> tasks) {
+        Collections.sort(tasks,new Comparator<Task>() {
             @Override
-            public int compare(T t, T t2) {
+            public int compare(Task t, Task t2) {
                 int diffPrio = t2.getPriority()-t.getPriority();
                 if (diffPrio == 0) {
                     return (int) ( (t.getCreated() / 1000L) - (t2.getCreated() / 1000L) );

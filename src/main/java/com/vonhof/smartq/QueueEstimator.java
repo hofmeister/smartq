@@ -6,7 +6,7 @@ import org.apache.log4j.Logger;
 import java.util.*;
 import java.util.concurrent.*;
 
-public class QueueEstimator<T extends Task> {
+public class QueueEstimator {
     private final static Logger log = Logger.getLogger(QueueEstimator.class);
     private final static ExecutorService pool = Executors.newCachedThreadPool();
 
@@ -34,7 +34,7 @@ public class QueueEstimator<T extends Task> {
         return taskStarts(null);
     }
 
-    public long queueEnds(ParallelIterator<T> queued) throws InterruptedException {
+    public long queueEnds(ParallelIterator<Task> queued) throws InterruptedException {
         return taskStarts(queued, null);
     }
 
@@ -42,7 +42,7 @@ public class QueueEstimator<T extends Task> {
         return taskStarts(store.getPending(), task);
     }
 
-    public synchronized long taskStarts(ParallelIterator<T> queued, final Task task) throws InterruptedException {
+    public synchronized long taskStarts(ParallelIterator<Task> queued, final Task task) throws InterruptedException {
 
         if (speed.equals(Speed.AUTO) && queued.size() > 0) {
             if (queued.size() > 500000) {
@@ -67,7 +67,7 @@ public class QueueEstimator<T extends Task> {
                     futures.add(pool.submit(new Callable<Long>() {
                         @Override
                         public Long call() throws Exception {
-                            final QueueEstimator<T> estimator = new QueueEstimator<>(queue);
+                            final QueueEstimator estimator = new QueueEstimator(queue);
                             estimator.speed = speed;
                             return estimator.calculateETA(it, task);
                         }
@@ -94,97 +94,102 @@ public class QueueEstimator<T extends Task> {
     }
 
 
-    private long calculateETA(ParallelIterator<T> queued, Task task) throws InterruptedException {
-        runningTasks.clear();
-        onHold.clear();
-        executionOrder.clear();
-        time = 0;
-        concurrencyCache = new FastCountMap(store.getTags(), -1);
-        runningTaskCount = new FastCountMap(store.getTags(), 0);
-        estimates = new FastCountMap(store.getTags(), -1);
+    private long calculateETA(ParallelIterator<Task> queued, Task task) throws InterruptedException {
+        try {
 
-        int maxHoldingSize = -1;
+            runningTasks.clear();
+            onHold.clear();
+            executionOrder.clear();
+            time = 0;
+            concurrencyCache = new FastCountMap(store.getTags(), -1);
+            runningTaskCount = new FastCountMap(store.getTags(), 0);
+            estimates = new FastCountMap(store.getTags(), -1);
 
-        if (queue.getSubscribers() < 1) {
-            throw new RuntimeException("Can not estimate queue with no subscribers");
-        }
+            int maxHoldingSize = -1;
 
-        boolean doGuesstimate = speed.getSpeed() >= Speed.FASTEST.getSpeed();
-        int taskCount = 0;
-        int holdingHits = 0;
-        long size = queued.size();
-        long criticalMass = Math.max(15000, size / 5L);
-        mainWhile:
-        while(queued.hasNext() || !onHold.isEmpty())  {
-            time = markFirstDone(); //Moves time forward
-
-            //Check if we had to skip some that now can be executed
-            int holdingSize = onHold.size();
-            if (maxHoldingSize < holdingSize) {
-                maxHoldingSize = holdingSize;
+            if (queue.getSubscribers() < 1) {
+                throw new RuntimeException("Can not estimate queue with no subscribers");
             }
 
+            boolean doGuesstimate = speed.getSpeed() >= Speed.FASTEST.getSpeed();
+            int taskCount = 0;
+            int holdingHits = 0;
+            long size = queued.size();
+            long criticalMass = Math.max(15000, size / 5L);
+            mainWhile:
+            while(queued.hasNext() || !onHold.isEmpty())  {
+                time = markFirstDone(); //Moves time forward
 
-            if (doGuesstimate && taskCount > criticalMass) {
+                //Check if we had to skip some that now can be executed
+                int holdingSize = onHold.size();
+                if (maxHoldingSize < holdingSize) {
+                    maxHoldingSize = holdingSize;
+                }
 
-                double taskAvg = (double)time / (double)taskCount;
-                return (long) Math.ceil((double)size * taskAvg);
-            }
 
-            holdingHits++;
-            for(TaskInfo holding : new ArrayList<>(onHold)) {
-                if (canRunNow(holding)) {
+                if (doGuesstimate && taskCount > criticalMass) {
+
+                    double taskAvg = (double)time / (double)taskCount;
+                    return (long) Math.ceil((double)size * taskAvg);
+                }
+
+                holdingHits++;
+                for(TaskInfo holding : new ArrayList<>(onHold)) {
+                    if (canRunNow(holding)) {
+                        if (task != null &&
+                                holding.getId().equals(task.getId())) {
+                            return time;
+                        }
+
+                        if (onHold.remove(holding)) {
+                            markAsRunning(holding);
+                            taskCount++;
+                        }
+                    }
+                }
+
+                if (holdingSize > 500) {
+                    continue; //Save some memory
+                }
+
+                while(queued.hasNext()) {
+                    TaskInfo next = new TaskInfo(queued.next());
+
+
+                    //Pick from queue
+
+                    if (!canRunNow(next)) {
+                        onHold.add(next);
+                        if (!canRunAny()) {
+                            break;
+                        } else {
+                            if (onHold.size() > 500) {
+                                continue mainWhile;//Save some memory
+                            }
+                            continue;
+                        }
+                    }
+
                     if (task != null &&
-                            holding.getId().equals(task.getId())) {
+                            next.getId().equals(task.getId())) {
                         return time;
                     }
 
-                    if (onHold.remove(holding)) {
-                        markAsRunning(holding);
-                        taskCount++;
-                    }
+                    markAsRunning(next);
+                    taskCount++;
                 }
             }
 
-            if (holdingSize > 500) {
-                continue; //Save some memory
+            //System.out.println("Max holding size was " + maxHoldingSize + " and hits on holding: " + holdingHits);
+
+            while(!runningTasks.isEmpty()) {
+                time = markFirstDone();
             }
 
-            while(queued.hasNext()) {
-                TaskInfo next = new TaskInfo(queued.next());
-
-
-                //Pick from queue
-
-                if (!canRunNow(next)) {
-                    onHold.add(next);
-                    if (!canRunAny()) {
-                        break;
-                    } else {
-                        if (onHold.size() > 500) {
-                            continue mainWhile;//Save some memory
-                        }
-                        continue;
-                    }
-                }
-
-                if (task != null &&
-                        next.getId().equals(task.getId())) {
-                    return time;
-                }
-
-                markAsRunning(next);
-                taskCount++;
-            }
+            return time;
+        } finally {
+            queued.close();
         }
-
-        //System.out.println("Max holding size was " + maxHoldingSize + " and hits on holding: " + holdingHits);
-
-        while(!runningTasks.isEmpty()) {
-            time = markFirstDone();
-        }
-
-        return time;
     }
 
     /**

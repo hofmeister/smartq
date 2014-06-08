@@ -52,6 +52,7 @@ public class Task<T> {
         this.type = tag;
     }
 
+    @JsonIgnore
     public void reset() {
         this.created = WatchProvider.currentTime();
         started = 0;

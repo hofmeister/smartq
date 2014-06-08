@@ -14,7 +14,7 @@ import static org.junit.Assert.assertTrue;
 
 public class TaskStoreTest {
 
-    protected TaskStore<Task> store = null;
+    protected TaskStore store = null;
 
     @Before
     public void setup() throws IOException, SQLException {
@@ -22,13 +22,13 @@ public class TaskStoreTest {
     }
 
 
-    protected TaskStore<Task> makeStore()  {
-        return new MemoryTaskStore<Task>();
+    protected TaskStore makeStore()  {
+        return new MemoryTaskStore();
     }
 
     @Test
     public void can_add_and_remove() throws SQLException, InterruptedException {
-        TaskStore<Task> store = makeStore();
+        TaskStore store = makeStore();
 
         assertEquals("SmartQ is empty",0,store.queueSize());
         assertEquals("Running is empty",0,store.runningCount());
@@ -58,7 +58,7 @@ public class TaskStoreTest {
 
     @Test
     public void task_can_be_marked_as_failed() throws SQLException, InterruptedException {
-        TaskStore<Task> store = makeStore();
+        TaskStore store = makeStore();
 
         assertEquals("SmartQ is empty",0,store.queueSize());
         assertEquals("Running is empty",0,store.runningCount());

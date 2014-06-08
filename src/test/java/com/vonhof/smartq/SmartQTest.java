@@ -18,22 +18,22 @@ import static org.junit.Assert.fail;
 
 public class SmartQTest {
 
-    protected TaskStore<Task> makeStore() {
-        return new MemoryTaskStore<Task>();
+    protected TaskStore makeStore() {
+        return new MemoryTaskStore();
     }
 
-    protected SmartQ<Task, DefaultTaskResult> makeQueue() {
-        return new SmartQ<Task, DefaultTaskResult>(makeStore());
+    protected SmartQ<DefaultTaskResult> makeQueue() {
+        return new SmartQ<DefaultTaskResult>(makeStore());
     }
 
-    protected SmartQ<Task, DefaultTaskResult> makeNode(TaskStore<Task> store) {
-        return new SmartQ<Task, DefaultTaskResult>(store);
+    protected SmartQ<DefaultTaskResult> makeNode(TaskStore store) {
+        return new SmartQ<DefaultTaskResult>(store);
     }
 
 
     @Test
     public void concurrency_is_calculated_based_on_tag_and_global_setting() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         assertEquals(-1, queue.getConcurrency());
         assertEquals(-1, queue.getConcurrency("any"));
@@ -52,7 +52,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_can_be_added_and_acquired() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
@@ -68,7 +68,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_can_be_prioritized() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task notImportantTask1 = new Task("test").withPriority(1);
         Task notImportantTask2 = new Task("test").withPriority(1);
@@ -92,7 +92,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_can_be_cancelled() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
@@ -109,11 +109,13 @@ public class SmartQTest {
 
     @Test
     public void tasks_can_fail() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
         queue.submit(task);
+
+        Thread.sleep(500); //Allow async ops to go through
 
         assertEquals(queue.queueSize(), 1);
 
@@ -121,12 +123,12 @@ public class SmartQTest {
 
         assertEquals(queue.queueSize(), 0);
 
-        assertEquals(queue.getStore().get(task.getId()).getState(), State.ERROR);
+        assertEquals(State.ERROR, queue.getStore().get(task.getId()).getState());
     }
 
     @Test
     public void tasks_can_retry_if_failed() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
@@ -145,7 +147,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_can_be_rescheduled() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task = new Task("test");
 
@@ -165,7 +167,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_can_be_rate_limited_by_type() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("test");
         Task task2 = new Task("test");
@@ -200,7 +202,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_with_different_type_is_not_rate_limited() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         queue.setRateLimit("test", 2);
 
@@ -237,7 +239,7 @@ public class SmartQTest {
 
     @Test
     public void tasks_with_multiple_rate_limited_tags_gets_the_most_restricted() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         queue.setRateLimit("test", 2);
         queue.setRateLimit("test2", 4);
@@ -253,7 +255,7 @@ public class SmartQTest {
 
     @Test
     public void can_do_simple_estimations() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a");
         Task task2 = new Task("a");
@@ -279,7 +281,7 @@ public class SmartQTest {
 
     @Test
     public void can_do_subscriber_based_estimations() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a");
         Task task2 = new Task("a");
@@ -306,7 +308,7 @@ public class SmartQTest {
 
     @Test
     public void can_get_running_tasks_by_type() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a");
         Task task2 = new Task("a");
@@ -342,7 +344,7 @@ public class SmartQTest {
 
         WatchProvider.currentTime(0); //Override time - to have better control
 
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a");
         Task task2 = new Task("a");
@@ -384,7 +386,7 @@ public class SmartQTest {
 
         WatchProvider.currentTime(0); //Override time - to have better control
 
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a");
         Task task2 = new Task("b");
@@ -429,7 +431,7 @@ public class SmartQTest {
 
         WatchProvider.currentTime(0); //Override time - to have better control
 
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
 
         Task task1 = new Task("a");
         task1.addRateLimit("sometag",1);
@@ -477,7 +479,7 @@ public class SmartQTest {
         double before = System.currentTimeMillis();
         double amount = 10000;
 
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         for (int i = 0; i < amount; i++) {
             queue.submit(new Task("test"));
         }
@@ -494,7 +496,7 @@ public class SmartQTest {
     @Ignore
     public void can_acquire_tasks_at_high_rates() throws InterruptedException {
         double amount = 10000;
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         for (int i = 0; i < amount; i++) {
             queue.submit(new Task("test"));
         }
@@ -516,11 +518,11 @@ public class SmartQTest {
 
     @Test
     public void queue_handles_concurrent_acquire() throws InterruptedException {
-        final TaskStore<Task> store = makeStore();
+        final TaskStore store = makeStore();
 
-        SmartQ<Task, DefaultTaskResult> queue1 = makeNode(store);
-        SmartQ<Task, DefaultTaskResult> queue2 = makeNode(store);
-        SmartQ<Task, DefaultTaskResult> queue3 = makeNode(store);
+        SmartQ<DefaultTaskResult> queue1 = makeNode(store);
+        SmartQ<DefaultTaskResult> queue2 = makeNode(store);
+        SmartQ<DefaultTaskResult> queue3 = makeNode(store);
 
         Task task1 = new Task("test");
         Task task2 = new Task("test");
@@ -596,7 +598,7 @@ public class SmartQTest {
 
     @Test
     public void can_wait_and_wakeup() throws InterruptedException {
-        TaskStore<Task> store = makeStore();
+        TaskStore store = makeStore();
 
         ThreadedWaiter locker = new ThreadedWaiter(store);
 
@@ -615,7 +617,7 @@ public class SmartQTest {
 
     @Test
     public void can_estimate_simple_queues() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         Task a  = new Task("test");
         Task b  = new Task("test");
         Task c  = new Task("test");
@@ -650,7 +652,7 @@ public class SmartQTest {
 
     @Test
     public void can_estimate_when_a_task_begins_in_simple_queues() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         Task a  = new Task("test");
         Task b  = new Task("test");
         Task c  = new Task("test");
@@ -686,7 +688,7 @@ public class SmartQTest {
 
     @Test
     public void can_estimate_queues_with_several_rate_limits() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         Task a  = new Task("rate1");
         Task b  = new Task("rate1");
         Task c  = new Task("rate2");
@@ -731,7 +733,7 @@ public class SmartQTest {
 
     @Test
     public void can_estimate_when_a_task_begins_in_a_queue_with_rate_limits() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         Task a  = new Task("rate1");
         Task b  = new Task("rate1");
         Task c  = new Task("rate2");
@@ -776,7 +778,7 @@ public class SmartQTest {
 
     @Test
     public void can_estimate_queues_with_various_runtimes_and_rate_limits() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         Task a  = new Task("rate1");
         Task b  = new Task("rate1");
         Task c  = new Task("rate2");
@@ -814,7 +816,7 @@ public class SmartQTest {
 
     @Test
     public void can_estimate_when_a_task_starts_in_a_queue_with_various_runtimes_and_rate_limits() throws InterruptedException {
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         Task a  = new Task("rate1");
         Task b  = new Task("rate1");
         Task c  = new Task("rate2");
@@ -858,7 +860,7 @@ public class SmartQTest {
         //Thread.sleep(5000);
 
         System.out.println("Building task list");
-        SmartQ<Task, DefaultTaskResult> queue = makeQueue();
+        SmartQ<DefaultTaskResult> queue = makeQueue();
         List<Task> tasks = new LinkedList();
         final int factor = 100;
 
@@ -885,6 +887,8 @@ public class SmartQTest {
         if (queue.getStore() instanceof PostgresTaskStore) {
             assertTrue("For a factor = 100 this should be around less than 2300ms", submitTook < 2300L);
         } else if (queue.getStore() instanceof MemoryTaskStore) {
+            assertTrue("For a factor = 100 this should be around less than 200ms", submitTook < 200L);
+        } else if (queue.getStore() instanceof WriteThroughTaskStore) {
             assertTrue("For a factor = 100 this should be around less than 200ms", submitTook < 200L);
         } else {
             fail("Unknown task store");
@@ -927,16 +931,18 @@ public class SmartQTest {
             assertTrue("For a factor = 100 this should be around less than 2500ms", timeTaken < 2500L);
         } else if (queue.getStore() instanceof MemoryTaskStore) {
             assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 400L);
+        } else if (queue.getStore() instanceof WriteThroughTaskStore) {
+            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 400L);
         } else {
             fail("Unknown task store");
         }
     }
 
     private static class ThreadedWaiter extends Thread {
-        private final TaskStore<Task> store;
+        private final TaskStore store;
         private boolean done;
 
-        private ThreadedWaiter(TaskStore<Task> store) {
+        private ThreadedWaiter(TaskStore store) {
             this.store = store;
         }
 
@@ -956,11 +962,11 @@ public class SmartQTest {
     }
 
     private static class ThreadedSubscriber extends Thread {
-        private final SmartQ<Task, DefaultTaskResult> queue;
+        private final SmartQ<DefaultTaskResult> queue;
         private boolean done = false;
         private Task task;
 
-        private ThreadedSubscriber(SmartQ<Task, DefaultTaskResult> queue, String name) {
+        private ThreadedSubscriber(SmartQ<DefaultTaskResult> queue, String name) {
             super(name);
             this.queue = queue;
         }
@@ -997,10 +1003,10 @@ public class SmartQTest {
     }
 
     private static class ThreadedRunner extends Thread {
-        private final SmartQ<Task, DefaultTaskResult> queue;
+        private final SmartQ<DefaultTaskResult> queue;
         private boolean done;
 
-        private ThreadedRunner(SmartQ<Task, DefaultTaskResult> queue) {
+        private ThreadedRunner(SmartQ<DefaultTaskResult> queue) {
             this.queue = queue;
         }
 

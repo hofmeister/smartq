@@ -3,7 +3,6 @@ package com.vonhof.smartq;
 
 import org.junit.After;
 
-import java.sql.SQLException;
 import java.util.UUID;
 
 public class PostgresTaskStoreTest extends TaskStoreTest {
@@ -16,9 +15,9 @@ public class PostgresTaskStoreTest extends TaskStoreTest {
     }
 
     @Override
-    protected PostgresTaskStore<Task> makeStore()  {
+    protected TaskStore makeStore()  {
         try {
-            PostgresTaskStore store = new PostgresTaskStore<Task>(Task.class);
+            PostgresTaskStore store = new PostgresTaskStore(Task.class);
             store.setTableName("queue_"+UUID.randomUUID().toString().replaceAll("-", ""));
             store.createTable();
             return store;

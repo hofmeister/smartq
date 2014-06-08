@@ -31,12 +31,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class SmartQServer<T extends Task> {
+public class SmartQServer {
 
     private static final Logger log = Logger.getLogger(SmartQServer.class);
 
     private final InetSocketAddress address;
-    private final SmartQ<T,?> queue;
+    private final SmartQ<?> queue;
 
     private NioSocketAcceptor acceptor;
     private final AtomicInteger subscriberCount = new AtomicInteger(0);
@@ -71,16 +71,16 @@ public class SmartQServer<T extends Task> {
         return address;
     }
 
-    public SmartQ<T,?> getQueue() {
+    public SmartQ<?> getQueue() {
         return queue;
     }
 
-    public SmartQClient<T> makeClient() {
-        return new SmartQClient<T>(address);
+    public SmartQClient<Task> makeClient() {
+        return new SmartQClient<Task>(address);
     }
 
-    public SmartQClient<T> makeClient(SmartQClientMessageHandler<T> handler) {
-        return new SmartQClient<T>(address, handler, 1);
+    public SmartQClient<Task> makeClient(SmartQClientMessageHandler<Task> handler) {
+        return new SmartQClient<Task>(address, handler, 1);
     }
 
     public synchronized void listen() throws IOException {
@@ -222,7 +222,7 @@ public class SmartQServer<T extends Task> {
             return tasks == null || (tasks.size() >= getTaskLimit(session));
         }
 
-        public void sendTask(IoSession session, T task) throws InterruptedException {
+        public void sendTask(IoSession session, Task task) throws InterruptedException {
             if (!isAlive(session)) {
                 return;
             }
@@ -355,7 +355,7 @@ public class SmartQServer<T extends Task> {
                     }
                     break;
                 case PUBLISH:
-                    queue.submit((T) args[0]);
+                    queue.submit((Task) args[0]);
                     break;
 
             }
@@ -413,12 +413,12 @@ public class SmartQServer<T extends Task> {
 
         @Override
         public void run() {
-            Iterator<T> running = queue.getStore().getRunning();
+            Iterator<Task> running = queue.getStore().getRunning();
 
             List<UUID> staleIds = new ArrayList<UUID>();
 
             while(running.hasNext()) {
-                T next = running.next();
+                Task next = running.next();
                 if (!requestHandler.taskIsRunning(next.getId())) {
                     staleIds.add(next.getId());
                 }

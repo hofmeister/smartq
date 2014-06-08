@@ -10,11 +10,11 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Benchmark {
-    public static final MemoryTaskStore<Task> STORE = new MemoryTaskStore<Task>();
+    public static final MemoryTaskStore STORE = new MemoryTaskStore();
     public static BenchmarkListener benchmarkListener;
 
-    private static TaskStore<Task> makePGStore() throws SQLException, IOException {
-        PostgresTaskStore<Task> store = new PostgresTaskStore<Task>(Task.class);
+    private static TaskStore makePGStore() throws SQLException, IOException {
+        PostgresTaskStore store = new PostgresTaskStore(Task.class);
         store.setTableName("benchmark_queue");
         store.createTable();
         store.reset();
@@ -22,17 +22,17 @@ public class Benchmark {
         return store;
     }
 
-    private static TaskStore<Task> makeMemStore() {
+    private static TaskStore makeMemStore() {
         return STORE;
     }
 
-    private static TaskStore<Task> makeStore() throws SQLException, IOException {
+    private static TaskStore makeStore() throws SQLException, IOException {
         return makePGStore();
     }
 
     public static void main (String[] args) throws Exception {
 
-        final SmartQ<Task, DefaultTaskResult> queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
+        final SmartQ<DefaultTaskResult> queue = new SmartQ<DefaultTaskResult>(makeStore());
 
 
         benchmarkListener = new BenchmarkListener(queue);
@@ -85,9 +85,9 @@ public class Benchmark {
         private long interval = 1000;
         private Timer timer = new Timer();
         private long first;
-        private final SmartQ<Task, DefaultTaskResult> queue;
+        private final SmartQ<DefaultTaskResult> queue;
 
-        private BenchmarkListener(final SmartQ<Task, DefaultTaskResult> queue) {
+        private BenchmarkListener(final SmartQ<DefaultTaskResult> queue) {
             this.queue = queue;
 
             timer.scheduleAtFixedRate(new TimerTask() {
@@ -150,12 +150,12 @@ public class Benchmark {
 
     private static class StressPublisher extends Thread {
         private static final Logger log = Logger.getLogger(StressPublisher.class);
-        private final SmartQ<Task, DefaultTaskResult> queue;
+        private final SmartQ<DefaultTaskResult> queue;
 
         private StressPublisher(int num) throws IOException, SQLException {
             super("Stress Publisher "+num);
 
-            queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
+            queue = new SmartQ<DefaultTaskResult>(makeStore());
             queue.addListener(benchmarkListener);
         }
 
@@ -187,12 +187,12 @@ public class Benchmark {
 
     private static class StressSubscriber extends Thread {
         private static final Logger log = Logger.getLogger(StressSubscriber.class);
-        private final SmartQ<Task, DefaultTaskResult> queue;
+        private final SmartQ<DefaultTaskResult> queue;
 
         private StressSubscriber(int num) throws IOException, SQLException {
             super("Stress subscriber "+num);
 
-            queue = new SmartQ<Task, DefaultTaskResult>(makeStore());
+            queue = new SmartQ<DefaultTaskResult>(makeStore());
             queue.addListener(benchmarkListener);
         }
 

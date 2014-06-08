@@ -11,11 +11,11 @@ import java.util.UUID;
 public class PostgresQueueTest extends SmartQTest {
 
 
-    private PostgresTaskStore<Task> store = null;
+    private PostgresTaskStore store = null;
 
     @Before
     public void setup() throws IOException, SQLException {
-        store = new PostgresTaskStore<Task>(Task.class);
+        store = new PostgresTaskStore(Task.class);
         store.setTableName("queue_"+ UUID.randomUUID().toString().replaceAll("-", ""));
         store.createTable();
     }
@@ -26,7 +26,7 @@ public class PostgresQueueTest extends SmartQTest {
         store.close();
     }
 
-    protected TaskStore<Task> makeStore()  {
+    protected TaskStore makeStore()  {
         return store;
     }
 
