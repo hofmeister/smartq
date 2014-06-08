@@ -103,13 +103,13 @@ public class MemoryTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public synchronized Iterator<T> getPending() {
-        return new CombinedIterator<T>(getRunning(), getQueued());
+    public synchronized ParallelIterator<T> getPending() {
+        return new CombinedIterator<T>(runningCount() + queueSize(),getRunning(), getQueued());
     }
 
     @Override
-    public synchronized Iterator<T> getPending(String tag) {
-        return new CombinedIterator(getRunning(tag), getQueued(tag));
+    public synchronized ParallelIterator<T> getPending(String tag) {
+        return new CombinedIterator(runningCount(tag) + queueSize(tag), getRunning(tag), getQueued(tag));
     }
 
     @Override

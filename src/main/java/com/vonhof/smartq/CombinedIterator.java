@@ -5,10 +5,12 @@ import java.util.LinkedList;
 import java.util.List;
 
 
-public class CombinedIterator<T> implements Iterator<T> {
+public class CombinedIterator<T> implements ParallelIterator<T> {
     private List<Iterator<T>> iterators = new LinkedList<Iterator<T>>();
+    private long size;
 
-    public CombinedIterator(Iterator<T> ... its ) {
+    public CombinedIterator(long size, Iterator<T> ... its ) {
+        this.size = size;
         for(Iterator<T> it : its) {
             iterators.add(it);
         }
@@ -37,5 +39,25 @@ public class CombinedIterator<T> implements Iterator<T> {
     @Override
     public void remove() {
         throw new RuntimeException("Method not supported");
+    }
+
+    @Override
+    public boolean canDoParallel() {
+        return false;
+    }
+
+    @Override
+    public ParallelIterator[] getParallelIterators() {
+        throw new RuntimeException("Method not supported");
+    }
+
+    @Override
+    public void close() {
+
+    }
+
+    @Override
+    public long size() {
+        return size;
     }
 }

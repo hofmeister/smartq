@@ -50,9 +50,9 @@ public interface TaskStore<T extends Task> {
 
     public void signalChange();
 
-    Iterator<T> getPending();
+    ParallelIterator<T> getPending();
 
-    Iterator<T> getPending(String tag);
+    ParallelIterator<T> getPending(String tag);
 
     long getTaskTypeEstimate(String type);
 

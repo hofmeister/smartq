@@ -4,9 +4,11 @@ package com.vonhof.smartq;
 import org.apache.log4j.Logger;
 
 import java.util.*;
+import java.util.concurrent.*;
 
 public class QueueEstimator<T extends Task> {
     private final static Logger log = Logger.getLogger(QueueEstimator.class);
+    private final static ExecutorService pool = Executors.newCachedThreadPool();
 
     private long time = 0;
     private final SmartQ queue;
@@ -17,17 +19,22 @@ public class QueueEstimator<T extends Task> {
     private FastCountMap runningTaskCount;
     private FastCountMap concurrencyCache;
     private FastCountMap estimates;
+    private Speed speed = Speed.EXACT;
 
     public QueueEstimator(SmartQ queue) {
         this.queue = queue;
         this.store = queue.getStore();
     }
 
+    public void setSpeed(Speed speed) {
+        this.speed = speed;
+    }
+
     public synchronized long queueEnds() throws InterruptedException {
         return taskStarts(null);
     }
 
-    public long queueEnds(Iterator<T> queued) throws InterruptedException {
+    public long queueEnds(ParallelIterator<T> queued) throws InterruptedException {
         return taskStarts(queued, null);
     }
 
@@ -35,7 +42,49 @@ public class QueueEstimator<T extends Task> {
         return taskStarts(store.getPending(), task);
     }
 
-    public synchronized long taskStarts(Iterator<T> queued, Task task) throws InterruptedException {
+    public synchronized long taskStarts(ParallelIterator<T> queued, final Task task) throws InterruptedException {
+        boolean doInParallel = speed.equals(Speed.AUTO) || speed.getSpeed() >= Speed.FAST.getSpeed();
+
+        if (doInParallel &&
+                queued.canDoParallel() &&
+                task == null) {
+
+            final ParallelIterator[] its = queued.getParallelIterators();
+            if (its.length > 1) {
+                final List<Future<Long>> futures = new LinkedList<>();
+
+                for(final ParallelIterator it : its) {
+                    futures.add(pool.submit(new Callable<Long>() {
+                        @Override
+                        public Long call() throws Exception {
+                            final QueueEstimator<T> estimator = new QueueEstimator<>(queue);
+                            estimator.speed = speed;
+                            return estimator.calculateETA(it, task);
+                        }
+                    }));
+                }
+
+                long out = 0;
+                for(Future<Long> f : futures) {
+                    try {
+                        out += f.get();
+                    } catch (ExecutionException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                return out;
+            }
+        }
+
+        return calculateETA(queued, task);
+    }
+
+    public synchronized List<TaskInfo> getLastExecutionOrder() {
+        return Collections.unmodifiableList(executionOrder);
+    }
+
+
+    private long calculateETA(ParallelIterator<T> queued, Task task) throws InterruptedException {
         runningTasks.clear();
         onHold.clear();
         executionOrder.clear();
@@ -50,7 +99,11 @@ public class QueueEstimator<T extends Task> {
             throw new RuntimeException("Can not estimate queue with no subscribers");
         }
 
+        boolean doGuesstimate = speed.getSpeed() >= Speed.FASTEST.getSpeed();
+        int taskCount = 0;
         int holdingHits = 0;
+        long size = queued.size();
+        long criticalMass = Math.max(15000, size / 5L);
         mainWhile:
         while(queued.hasNext() || !onHold.isEmpty())  {
             time = markFirstDone(); //Moves time forward
@@ -59,6 +112,13 @@ public class QueueEstimator<T extends Task> {
             int holdingSize = onHold.size();
             if (maxHoldingSize < holdingSize) {
                 maxHoldingSize = holdingSize;
+            }
+
+
+            if (doGuesstimate && taskCount > criticalMass) {
+
+                double taskAvg = (double)time / (double)taskCount;
+                return (long) Math.ceil((double)size * taskAvg);
             }
 
             holdingHits++;
@@ -71,6 +131,7 @@ public class QueueEstimator<T extends Task> {
 
                     if (onHold.remove(holding)) {
                         markAsRunning(holding);
+                        taskCount++;
                     }
                 }
             }
@@ -81,6 +142,7 @@ public class QueueEstimator<T extends Task> {
 
             while(queued.hasNext()) {
                 TaskInfo next = new TaskInfo(queued.next());
+
 
                 //Pick from queue
 
@@ -102,6 +164,7 @@ public class QueueEstimator<T extends Task> {
                 }
 
                 markAsRunning(next);
+                taskCount++;
             }
         }
 
@@ -112,10 +175,6 @@ public class QueueEstimator<T extends Task> {
         }
 
         return time;
-    }
-
-    public synchronized List<TaskInfo> getLastExecutionOrder() {
-        return Collections.unmodifiableList(executionOrder);
     }
 
     /**
@@ -171,7 +230,9 @@ public class QueueEstimator<T extends Task> {
             runningTaskCount.increment(tag,1);
         }
 
-        executionOrder.add(task);
+        if (executionOrder.size() < 300) {
+            executionOrder.add(task);
+        }
     }
 
     private void markAsDone(TaskInfo task, long endTime) {
@@ -221,6 +282,23 @@ public class QueueEstimator<T extends Task> {
         return true;
     }
 
+
+    public static enum Speed {
+        EXACT(1),
+        FAST(2),
+        FASTEST(2),
+        AUTO(-1);
+
+        private int speed;
+
+        private Speed(int speed) {
+            this.speed = speed;
+        }
+
+        public int getSpeed() {
+            return speed;
+        }
+    }
 
 
 }

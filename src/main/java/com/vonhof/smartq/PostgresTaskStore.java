@@ -10,10 +10,7 @@ import org.postgresql.copy.CopyIn;
 import org.postgresql.copy.CopyManager;
 import org.postgresql.core.BaseConnection;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.PipedInputStream;
 import java.nio.charset.Charset;
 import java.sql.*;
 import java.util.*;
@@ -204,12 +201,12 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     }
 
     @Override
-    public Iterator<T> getPending() {
+    public ParallelIterator<T> getPending() {
         return client().getPending();
     }
 
     @Override
-    public Iterator<T> getPending(String tag) {
+    public ParallelIterator<T> getPending(String tag) {
         return client().getPending(tag);
     }
 
@@ -515,8 +512,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             }
         }
 
-        private <T> Iterator<T> queryIterator(RowMapper<T> mapper, final String sql, final Object... args) throws SQLException {
-            return new DBIterator(mapper, sql, args);
+        private <T> DBIterator<T> queryIterator(RowMapper<T> mapper, final String countSql, final String sql, final Object... args) throws SQLException {
+            return new DBIterator(mapper, countSql, sql,   args);
         }
 
         private T queryOne(String sql, Object... args) throws SQLException {
@@ -594,15 +591,18 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             }
         }
 
-        public Iterator<T> getList(int state) {
+        public DBIterator<T> getList(int state) {
             return getList(state, null);
         }
 
-        public Iterator<T> getList(int state, String type) {
+        public DBIterator<T> getList(int state, String type) {
             try {
                 if (type != null && !type.isEmpty()) {
                     return client()
                             .queryIterator(TASK_ROW_MAPPER,
+                                    String.format("SELECT COUNT(DISTINCT task.id) " +
+                                            "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                                            "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? ", tableName),
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
                                             "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
@@ -612,10 +612,12 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 } else {
                     return client()
                             .queryIterator(TASK_ROW_MAPPER,
+                                    String.format("SELECT count(*) " +
+                                            "FROM \"%s\" task " +
+                                            "WHERE task.state = ? ", tableName),
                                     String.format("SELECT task.id, task.content " +
-                                            "FROM \"%s\" task, \"%1$s_tags\" tag " +
+                                            "FROM \"%s\" task " +
                                             "WHERE task.state = ? " +
-                                            "GROUP BY task.id " +
                                             "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName), state
                             );
                 }
@@ -624,15 +626,18 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             }
         }
 
-        public Iterator<T> getPending() {
+        public DBIterator<T> getPending() {
             return getPending(null);
         }
 
-        public Iterator<T> getPending(String tag) {
+        public DBIterator<T> getPending(String tag) {
             try {
                 if (tag != null && !tag.isEmpty()) {
                     return client()
                             .queryIterator(TASK_ROW_MAPPER,
+                                    String.format("SELECT count(distinct task.id) " +
+                                            "FROM \"%s\" task, \"%1$s_tags\" tag " +
+                                            "WHERE state IN (?,?) AND tag.id = task.id and tag.tag = ? ", tableName),
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%s\" task, \"%1$s_tags\" tag " +
                                             "WHERE state IN (?,?) AND tag.id = task.id and tag.tag = ? " +
@@ -645,10 +650,12 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                 } else {
                     return client()
                             .queryIterator(TASK_ROW_MAPPER,
+                                    String.format("SELECT count(*) " +
+                                            "FROM \"%s\" task " +
+                                            "WHERE task.state IN (?,?) ", tableName),
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%s\" task " +
                                             "WHERE task.state IN (?,?) " +
-                                            "GROUP BY task.id " +
                                             "ORDER BY task.state DESC, task.priority DESC, task.created DESC, task.order ASC ", tableName),
                                     STATE_RUNNING,
                                     STATE_QUEUED
@@ -752,24 +759,31 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         }
 
 
-        public Iterator<UUID> getIds(int state) {
+        public DBIterator<UUID> getIds(int state) {
             return getIds(state, null);
         }
 
-        public Iterator<UUID> getIds(int state, String type) {
+        public DBIterator<UUID> getIds(int state, String type) {
             try {
                 if (type != null && !type.isEmpty()) {
                     return client()
                             .queryIterator(UUID_ROW_MAPPER,
+                                    String.format("SELECT count(distinct task.id) " +
+                                            "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
+                                            "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? ", tableName),
                                     String.format("SELECT task.id " +
                                             "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
                                             "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
                                             "GROUP BY task.id " +
-                                            "ORDER BY task.priority DESC, task.created DESC, task.order ASC ", tableName), state, type
+                                            "ORDER BY task.priority DESC, task.created DESC, task.order ASC ", tableName),
+                                    state, type
                             );
                 } else {
                     return client()
                             .queryIterator(UUID_ROW_MAPPER,
+                                    String.format("SELECT count(*) " +
+                                            "FROM \"%s\" task " +
+                                            "WHERE task.state = ? ", tableName),
                                     String.format("SELECT task.id " +
                                             "FROM \"%s\" task " +
                                             "WHERE task.state = ? " +
@@ -782,23 +796,86 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         }
 
 
-        public class DBIterator<T> implements Iterator<T> {
+        public class DBIterator<T> implements ParallelIterator<T> {
 
             private final String sql;
+            private final String countSql;
             private final Object[] args;
             private final RowMapper<T> rowMapper;
             private int offset = 0;
             private int lastOffset = -1;
-            private int bufferOffset = 0;
-            private int bufferSize = 200000;
+            private long bufferOffset = 0;
+            private long bufferSize = 40000;
             private PreparedStatement stmt = null;
             private ResultSet result = null;
             private boolean lastResult = false;
+            private long totalCount = -1;
+            private boolean thisChunkOnly = false;
 
-            public DBIterator(RowMapper<T> rowMapper, String sql, Object ... args) {
+            public DBIterator(RowMapper<T> rowMapper, String countSql, String sql, Object ... args) {
+                this.rowMapper = rowMapper;
+                this.sql = sql;
+                this.countSql = countSql;
+                this.args = args;
+            }
+
+            private DBIterator(RowMapper<T> rowMapper, String countSql, String sql, long offset, long size, Object ... args) {
                 this.rowMapper = rowMapper;
                 this.sql = sql;
                 this.args = args;
+                this.bufferOffset = offset;
+                this.bufferSize = size;
+                this.countSql = countSql;
+                this.thisChunkOnly = true;
+            }
+
+            @Override
+            public long size() {
+                if (totalCount < 0 && countSql != null) {
+                    String sqlStr = countSql;
+                    if (thisChunkOnly) {
+                        sqlStr = String.format("%s OFFSET %s LIMIT %s", countSql, bufferOffset, bufferSize);
+                    }
+                    try {
+                        totalCount = client().queryForLong(sqlStr, args);
+                    } catch (SQLException e) {
+                        totalCount = 0;
+                        log.error("Failed to count rows", e);
+                    }
+                }
+
+                return totalCount;
+            }
+
+            @Override
+            public boolean canDoParallel() {
+                long total = size();
+                if (total < 10000) {
+                    return false;
+                }
+                return true;
+            }
+
+            @Override
+            public ParallelIterator[] getParallelIterators() {
+                final long total = size();
+                if (total < 10000) {
+                    return new ParallelIterator[] {this};
+                }
+                int chunks = total > 40000 ? 4 : 2;
+                long chunkSize = (long) Math.ceil((double)total / (double)chunks);
+
+                DBIterator<T>[] iterators = new DBIterator[chunks];
+                for(int i = 0; i < chunks; i++) {
+                    iterators[i] = new DBIterator<T>(rowMapper, countSql, sql, i * chunkSize, chunkSize, args) {
+                        @Override
+                        public boolean canDoParallel() {
+                            return false;
+                        }
+                    };
+                }
+
+                return iterators;
             }
 
             @Override
@@ -812,11 +889,19 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                     lastOffset = offset;
 
                     if (result == null || result.isAfterLast()) {
+
+
+                        if (result != null && thisChunkOnly) {
+                            ensureClosed();
+                            return lastResult = false;
+                        }
+
                         if (result != null && offset > 0) {
                             bufferOffset += bufferSize;
                         }
 
                         ensureClosed();
+
 
                         stmt = stmt(String.format("%s OFFSET %s LIMIT %s", sql, bufferOffset, bufferSize), args);
 
@@ -856,10 +941,11 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
                     return out;
                 } catch (SQLException e) {
                     log.error("Failed to map row", e);
+                    throw new RuntimeException(e);
                 }
-                return null;
             }
 
+            @Override
             public void close() {
                 try {
                     ensureClosed();
@@ -870,6 +956,8 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             public void remove() {
                 throw new RuntimeException("Method not implemented");
             }
+
+
         }
     }
 

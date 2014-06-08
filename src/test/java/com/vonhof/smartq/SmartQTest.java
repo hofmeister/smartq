@@ -907,9 +907,10 @@ public class SmartQTest {
         queue.setSubscribers(60);
 
         System.out.println("Getting task list");
-        Iterator<Task> pending = queue.getStore().getPending();
+        ParallelIterator<Task> pending = queue.getStore().getPending();
 
         QueueEstimator estimator = new QueueEstimator(queue);
+        //estimator.setSpeed(QueueEstimator.Speed.FASTEST);
 
         System.out.println("Starting ETA calculation");
         long start = System.currentTimeMillis();
