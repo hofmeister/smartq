@@ -860,7 +860,7 @@ public class SmartQTest {
         System.out.println("Building task list");
         SmartQ<Task, DefaultTaskResult> queue = makeQueue();
         List<Task> tasks = new LinkedList();
-        final int factor = 800;
+        final int factor = 100;
 
         int[] sizes = new int[]{22,53,11,5,82};
         int totalSize = 0;
@@ -878,7 +878,18 @@ public class SmartQTest {
         }
 
         System.out.println("Setting up queue");
+        long beforeSubmit = System.currentTimeMillis();
         queue.submit(tasks);
+        long submitTook = System.currentTimeMillis() - beforeSubmit;
+        System.out.println(String.format("Spent %s ms on inserting %s tasks",submitTook, totalSize));
+        if (queue.getStore() instanceof PostgresTaskStore) {
+            assertTrue("For a factor = 100 this should be around less than 2300ms", submitTook < 2300L);
+        } else if (queue.getStore() instanceof MemoryTaskStore) {
+            assertTrue("For a factor = 100 this should be around less than 200ms", submitTook < 200L);
+        } else {
+            fail("Unknown task store");
+        }
+
         queue.setRateLimit("rate1", 10);
         queue.setRateLimit("rate2", 5);
         queue.setRateLimit("rate3", 7);
@@ -908,12 +919,14 @@ public class SmartQTest {
         System.out.println(String.format("ETA %s ms, Calculation time:  %s ms, Q Size: %s, Free mem: %s",
                 eta, timeTaken, totalSize, Runtime.getRuntime().freeMemory()));
 
-        assertTrue("For a factor = 800 this should be around 1600ms", timeTaken < 1800L);
+        if (queue.getStore() instanceof PostgresTaskStore) {
+            assertTrue("For a factor = 100 this should be around less than 2500ms", timeTaken < 2500L);
+        } else if (queue.getStore() instanceof MemoryTaskStore) {
+            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 400L);
+        } else {
+            fail("Unknown task store");
+        }
     }
-
-
-
-
 
     private static class ThreadedWaiter extends Thread {
         private final TaskStore<Task> store;
