@@ -43,8 +43,18 @@ public class QueueEstimator<T extends Task> {
     }
 
     public synchronized long taskStarts(ParallelIterator<T> queued, final Task task) throws InterruptedException {
-        boolean doInParallel = speed.equals(Speed.AUTO) || speed.getSpeed() >= Speed.FAST.getSpeed();
 
+        if (speed.equals(Speed.AUTO) && queued.size() > 0) {
+            if (queued.size() > 500000) {
+                speed = Speed.FASTEST;
+            } else if (queued.size() > 100000) {
+                speed = Speed.FAST;
+            } else {
+                speed = Speed.EXACT;
+            }
+        }
+
+        boolean doInParallel = speed.getSpeed() >= Speed.FAST.getSpeed();
         if (doInParallel &&
                 queued.canDoParallel() &&
                 task == null) {
@@ -284,9 +294,24 @@ public class QueueEstimator<T extends Task> {
 
 
     public static enum Speed {
+        /**
+         * Gives the exact ETA of the queued tasks. This is the default speed.
+         */
         EXACT(1),
+        /**
+         * Gives a near-exact ETA of the queued tasks. Runs bigger queues in parallel thus losing some
+         * level of accuracy. The bigger the queue bigger the effect this has on the speed. Use
+         * with queues of (60K+)
+         */
         FAST(2),
+        /**
+         * Gives a rough guesstimate of the ETA by only calculating some of the queues and doing it in parallel.
+         * Only use this on very large queues (120K+)
+         */
         FASTEST(2),
+        /**
+         * Chooses the best speed for the given queue. Note that this might cause loss of accuracy.
+         */
         AUTO(-1);
 
         private int speed;
