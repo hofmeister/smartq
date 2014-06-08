@@ -11,6 +11,7 @@ import java.util.UUID;
 public class WriteThroughTaskStoreTest extends TaskStoreTest {
 
     private PostgresTaskStore pgStore;
+    private WriteThroughTaskStore store;
 
     @After
     public void tearDown() throws Exception {
@@ -21,12 +22,15 @@ public class WriteThroughTaskStoreTest extends TaskStoreTest {
     public void setup() throws SQLException, IOException {
         pgStore = new PostgresTaskStore(Task.class);
         pgStore.setTableName("queue_"+UUID.randomUUID().toString().replaceAll("-", ""));
+        pgStore.connect();
         pgStore.createTable();
+
+        store = new WriteThroughTaskStore(pgStore);
     }
 
     @Override
     protected TaskStore makeStore()  {
-        return new WriteThroughTaskStore(pgStore);
+        return store;
     }
 
 }

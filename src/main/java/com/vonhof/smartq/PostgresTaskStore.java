@@ -28,6 +28,7 @@ public class PostgresTaskStore implements TaskStore {
     private final String username;
     private final String password;
     private String tableName = "queue";
+    private volatile boolean closed = false;
 
     private final ThreadLocal<PostgresClient> client = new ThreadLocal<PostgresClient>() {
         @Override
@@ -98,7 +99,7 @@ public class PostgresTaskStore implements TaskStore {
     }
 
     @Override
-    public void queue(final Task ... tasks) {
+    public void queue(final Task... tasks) {
         try {
             withinTransaction(new Callable() {
                 @Override
@@ -106,7 +107,7 @@ public class PostgresTaskStore implements TaskStore {
                     CopyManager taskCopy = new CopyManager((BaseConnection) client().connection);
                     CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type, referenceid, created) FROM STDIN WITH DELIMITER '|'", tableName));
 
-                    for(Task task : tasks) {
+                    for (Task task : tasks) {
                         task = new Task(task);//Copy
                         task.setState(State.PENDING);
 
@@ -135,7 +136,7 @@ public class PostgresTaskStore implements TaskStore {
                     CopyManager tagCopy = new CopyManager((BaseConnection) client().connection);
                     CopyIn tagCopyIn = tagCopy.copyIn(String.format("COPY \"%s_tags\"(id, tag) FROM STDIN WITH DELIMITER '|'", tableName));
 
-                    for(Task task : tasks) {
+                    for (Task task : tasks) {
                         for (String tag : (Set<String>) task.getTags().keySet()) {
                             StringBuilder tagRowBuilder = new StringBuilder();
                             tagRowBuilder.append(task.getId());
@@ -301,7 +302,7 @@ public class PostgresTaskStore implements TaskStore {
     }
 
     @Override
-    public long queueSize(final String type)  {
+    public long queueSize(final String type) {
         return client().count(STATE_QUEUED, type);
     }
 
@@ -326,15 +327,15 @@ public class PostgresTaskStore implements TaskStore {
             callable.call();
             client().connection.commit();
         } catch (Exception e) {
-             try {
+            try {
                 client().connection.rollback();
-                 if (e instanceof BatchUpdateException) {
-                     e = ((BatchUpdateException)e).getNextException();
-                 }
+                if (e instanceof BatchUpdateException) {
+                    e = ((BatchUpdateException) e).getNextException();
+                }
                 log.warn("Rolled back transaction", e);
             } catch (SQLException e1) {
-                 log.debug("Failed to roll back transaction", e1);
-             }
+                log.debug("Failed to roll back transaction", e1);
+            }
         } finally {
             try {
                 client().connection.setAutoCommit(true);
@@ -346,7 +347,7 @@ public class PostgresTaskStore implements TaskStore {
 
 
     @Override
-    public  <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
+    public <U> U isolatedChange(Callable<U> callable) throws InterruptedException {
         boolean isolationStartedInThisCall = false;
         boolean transactionDone = true;
         try {
@@ -425,7 +426,7 @@ public class PostgresTaskStore implements TaskStore {
             public Object call() throws Exception {
                 String statements = IOUtils.toString(PostgresTaskStore.class.getResource("/pgtable.sql")).replaceAll("%tableName%", tableName);
                 String[] statementArr = statements.split(";");
-                for(String sql : statementArr) {
+                for (String sql : statementArr) {
                     client().update(sql);
                 }
                 return null;
@@ -440,6 +441,7 @@ public class PostgresTaskStore implements TaskStore {
 
     @Override
     public void close() throws Exception {
+        closed = true;
         client().close();
     }
 
@@ -473,6 +475,11 @@ public class PostgresTaskStore implements TaskStore {
         this.documentSerializer = documentSerializer;
     }
 
+    @Override
+    protected void finalize() throws Throwable {
+        close();
+    }
+
     private class PostgresClient {
         private final Connection connection;
         private final PGConnection pgconn;
@@ -494,18 +501,18 @@ public class PostgresTaskStore implements TaskStore {
             }
         }
 
-        public void close() throws SQLException {
+        public void close() throws SQLException, InterruptedException {
             log.trace("Closing client connection");
             connection.close();
 
             if (listener.isAlive()) {
                 listener.interrupt();
+                listener.join();
             }
         }
 
         @Override
         protected void finalize() throws Throwable {
-
             close();
         }
 
@@ -537,7 +544,7 @@ public class PostgresTaskStore implements TaskStore {
         }
 
         private <Task> DBIterator<Task> queryIterator(RowMapper<Task> mapper, final String countSql, final String sql, final Object... args) throws SQLException {
-            return new DBIterator(mapper, countSql, sql,   args);
+            return new DBIterator(mapper, countSql, sql, args);
         }
 
         private Task queryOne(String sql, Object... args) throws SQLException {
@@ -836,14 +843,14 @@ public class PostgresTaskStore implements TaskStore {
             private long totalCount = -1;
             private boolean thisChunkOnly = false;
 
-            public DBIterator(RowMapper<Task> rowMapper, String countSql, String sql, Object ... args) {
+            public DBIterator(RowMapper<Task> rowMapper, String countSql, String sql, Object... args) {
                 this.rowMapper = rowMapper;
                 this.sql = sql;
                 this.countSql = countSql;
                 this.args = args;
             }
 
-            private DBIterator(RowMapper<Task> rowMapper, String countSql, String sql, long offset, long size, Object ... args) {
+            private DBIterator(RowMapper<Task> rowMapper, String countSql, String sql, long offset, long size, Object... args) {
                 this.rowMapper = rowMapper;
                 this.sql = sql;
                 this.args = args;
@@ -884,13 +891,13 @@ public class PostgresTaskStore implements TaskStore {
             public ParallelIterator[] getParallelIterators() {
                 final long total = size();
                 if (total < 10000) {
-                    return new ParallelIterator[] {this};
+                    return new ParallelIterator[]{this};
                 }
                 int chunks = total > 40000 ? 4 : 2;
-                long chunkSize = (long) Math.ceil((double)total / (double)chunks);
+                long chunkSize = (long) Math.ceil((double) total / (double) chunks);
 
                 DBIterator<Task>[] iterators = new DBIterator[chunks];
-                for(int i = 0; i < chunks; i++) {
+                for (int i = 0; i < chunks; i++) {
                     iterators[i] = new DBIterator<Task>(rowMapper, countSql, sql, i * chunkSize, chunkSize, args) {
                         @Override
                         public boolean canDoParallel() {
@@ -973,7 +980,8 @@ public class PostgresTaskStore implements TaskStore {
             public void close() {
                 try {
                     ensureClosed();
-                } catch (SQLException e) {}
+                } catch (SQLException e) {
+                }
             }
 
             @Override
@@ -1028,29 +1036,40 @@ public class PostgresTaskStore implements TaskStore {
                 throw new RuntimeException(e);
             }
 
-            while (true) {
-                try {
-                    if (client.hasNotifications()) {
-                        log.trace("PG returned notifications");
+            try {
+                while (!interrupted() && !closed) {
+                    try {
+                        if (client.hasNotifications()) {
+                            log.trace("PG returned notifications");
+                            synchronized (PostgresTaskStore.this) {
+                                PostgresTaskStore.this.notifyAll();
+                            }
+                        }
+                    } catch (SQLException e) {
                         synchronized (PostgresTaskStore.this) {
                             PostgresTaskStore.this.notifyAll();
                         }
+                        throw new RuntimeException(e);
                     }
-                } catch (SQLException e) {
-                    synchronized (PostgresTaskStore.this) {
-                        PostgresTaskStore.this.notifyAll();
+
+                    synchronized (this) {
+                        try {
+                            wait(1000);
+                        } catch (InterruptedException e) {
+                            break;
+                        }
                     }
-                    throw new RuntimeException(e);
                 }
 
-                synchronized (this) {
-                    try {
-                        wait(1000);
-                    } catch (InterruptedException e) {
-                        return;
-                    }
+            } finally {
+                try {
+                    client.close();
+                } catch (Exception e) {
+                    log.warn("Failed to shut down client", e);
                 }
             }
+
+
         }
     }
 }

@@ -9,31 +9,17 @@ import java.util.concurrent.*;
 public class WriteThroughTaskStore implements TaskStore {
     private static final Logger log = Logger.getLogger(WriteThroughTaskStore.class);
 
-
-    private final ExecutorService laterQueue = Executors.newSingleThreadExecutor();
     private final MemoryTaskStore memStore;
-    private final TaskStore diskStore;
-    private final Stack<Future> futures = new Stack<>();
-    private final Timer timer = new Timer();
+    private final PostgresTaskStore diskStore;
+    private final Stack<Runnable> tasks = new Stack<>();
+    private final WorkerQueue workerQueue = new WorkerQueue();
+    private volatile boolean closed = false;
 
-    public WriteThroughTaskStore(TaskStore diskStore) {
+    public WriteThroughTaskStore(PostgresTaskStore diskStore) {
         this.memStore = new MemoryTaskStore();
         this.diskStore = diskStore;
-
+        workerQueue.start();
         reload();
-
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                Iterator<Future> it = futures.iterator();
-                while(it.hasNext()) {
-                    Future next = it.next();
-                    if (next.isDone() || next.isCancelled()) {
-                        it.remove();
-                    }
-                }
-            }
-        }, 0, 1000L * 60L * 10L);
     }
 
 
@@ -215,9 +201,21 @@ public class WriteThroughTaskStore implements TaskStore {
 
     @Override
     public void close() throws Exception {
-        memStore.close();
+
+        if (workerQueue.isAlive()) {
+            waitForAsyncTasks();
+            closed = true;
+            workerQueue.interrupt();
+            workerQueue.join();
+        }
+
         diskStore.close();
-        timer.cancel();
+        memStore.close();
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        close();
     }
 
     @Override
@@ -230,25 +228,64 @@ public class WriteThroughTaskStore implements TaskStore {
         return memStore.getLastTaskWithReference(referenceId);
     }
 
-    private Future<?> doLater(final Runnable runnable) {
-        final Future<?> future = laterQueue.submit(new Runnable() {
-            @Override
-            public void run() {
-                synchronized (diskStore) {
-                    runnable.run();
+    private void doLater(final Runnable runnable) {
+        if (closed) {
+            throw new RuntimeException("Cannot add new tasks to a closed store");
+        }
+        synchronized (tasks) {
+            tasks.push(new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (diskStore) {
+                        runnable.run();
+                    }
                 }
-            }
-        });
-        futures.push(future);
-        return future;
+            });
+
+            tasks.notifyAll();
+        }
     }
 
     public void waitForAsyncTasks() throws InterruptedException {
-        while(!futures.isEmpty()) {
+        while(!tasks.isEmpty()) {
+            synchronized (tasks) {
+                tasks.wait(5000);
+            }
+        }
+    }
+
+    private final class WorkerQueue extends Thread {
+        private WorkerQueue() {
+            super("write-through-queue");
+        }
+
+        @Override
+        public void run() {
+            while(!tasks.isEmpty() || (!interrupted() && !closed)) {
+
+                while(!tasks.isEmpty()) {
+                    Runnable task = tasks.pop();
+                    try {
+                        task.run();
+                    } catch (Exception e) {
+                        log.error("Async task failed", e);
+                    }
+                }
+
+                try {
+                    synchronized (tasks) {
+                        tasks.wait(5000);
+                    }
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+
             try {
-                futures.pop().get();
-            } catch (ExecutionException e) {
-                log.error("Async task failed", e);
+                tasks.clear();
+                diskStore.close();
+            } catch (Exception e) {
+                log.warn("Failed to close disk store", e);
             }
         }
     }

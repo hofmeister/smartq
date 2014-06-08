@@ -1037,12 +1037,6 @@ public class SmartQTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-
-            try {
-                queue.getStore().close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
         }
 
         private boolean hasAcquired() {
@@ -1076,12 +1070,6 @@ public class SmartQTest {
                 done = true;
 
             } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-
-            try {
-                queue.getStore().close();
-            } catch (Exception e) {
                 e.printStackTrace();
             }
         }

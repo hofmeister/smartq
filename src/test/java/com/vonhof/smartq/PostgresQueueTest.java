@@ -18,6 +18,7 @@ public class PostgresQueueTest extends SmartQTest {
         store = new PostgresTaskStore(Task.class);
         store.setTableName("queue_"+ UUID.randomUUID().toString().replaceAll("-", ""));
         store.createTable();
+        store.connect();
     }
 
     @After

@@ -19,6 +19,7 @@ public class PostgresTaskStoreTest extends TaskStoreTest {
         try {
             PostgresTaskStore store = new PostgresTaskStore(Task.class);
             store.setTableName("queue_"+UUID.randomUUID().toString().replaceAll("-", ""));
+            store.connect();
             store.createTable();
             return store;
         } catch (Exception e) {

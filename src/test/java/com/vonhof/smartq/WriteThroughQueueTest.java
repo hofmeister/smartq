@@ -11,23 +11,28 @@ import java.util.UUID;
 public class WriteThroughQueueTest extends SmartQTest {
 
 
-    private PostgresTaskStore pgStore = null;
+    private PostgresTaskStore pgStore;
+    private WriteThroughTaskStore store;
+
 
     @Before
     public void setup() throws IOException, SQLException {
         pgStore = new PostgresTaskStore(Task.class);
         pgStore.setTableName("queue_" + UUID.randomUUID().toString().replaceAll("-", ""));
+        pgStore.connect();
         pgStore.createTable();
+
+        store = new WriteThroughTaskStore(pgStore);
     }
 
     @After
     public void tearDown() throws Exception {
         pgStore.dropTable();
-        pgStore.close();
+        store.close();
     }
 
     protected TaskStore makeStore()  {
-        return new WriteThroughTaskStore(pgStore);
+        return store;
     }
 
 }

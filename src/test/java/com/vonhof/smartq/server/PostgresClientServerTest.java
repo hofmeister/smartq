@@ -19,6 +19,7 @@ public class PostgresClientServerTest extends ClientServerTest {
     public void setup() throws IOException, SQLException {
         store = new PostgresTaskStore(Task.class);
         store.setTableName("queue_"+ UUID.randomUUID().toString().replaceAll("-", ""));
+        store.connect();
         store.createTable();
     }
 

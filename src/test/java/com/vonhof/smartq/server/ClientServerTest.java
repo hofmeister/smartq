@@ -8,6 +8,7 @@ import com.vonhof.smartq.SocketProxy;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.Task.State;
 import com.vonhof.smartq.TaskStore;
+import org.junit.After;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -48,6 +49,7 @@ public class ClientServerTest {
     protected synchronized SmartQServer makeServer(InetSocketAddress address) {
         return new SmartQServer(address,makeQueue());
     }
+
 
 
 
