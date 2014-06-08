@@ -86,4 +86,36 @@ public class TaskStoreTest {
         assertEquals("Task has expected state", State.ERROR, store.get(t.getId()).getState());
         assertTrue("Failed tasks can be iterated", store.getFailed().hasNext());
     }
+
+    @Test
+    public void can_get_first_and_last_task_with_same_reference()  {
+        TaskStore store = makeStore();
+
+        Task firstA = new Task("1").withReferenceId("a");
+        Task lastB = new Task("2").withReferenceId("b");
+
+        Task a1 = new Task("2").withReferenceId("a");
+        Task a2 = new Task("3").withReferenceId("a");
+        Task lastA = new Task("4").withReferenceId("a");
+
+        Task b1 = new Task("5").withReferenceId("b").withPriority(2);
+        Task b2 = new Task("6").withReferenceId("b").withPriority(2);
+
+        Task firstB = new Task("7").withReferenceId("b").withPriority(5);
+
+        store.queue(firstA);
+        store.queue(lastB);
+        store.queue(a1);
+        store.queue(a2);
+        store.queue(lastA);
+        store.queue(b1);
+        store.queue(b2);
+        store.queue(firstB);
+
+        assertEquals(firstA, store.getFirstTaskWithReference("a"));
+        assertEquals(lastA, store.getLastTaskWithReference("a"));
+
+        assertEquals(firstB, store.getFirstTaskWithReference("b"));
+        assertEquals(lastB, store.getLastTaskWithReference("b"));
+    }
 }

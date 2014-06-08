@@ -5,8 +5,6 @@ import org.apache.log4j.Logger;
 
 import java.util.*;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class SmartQ<U>  {
 
@@ -162,6 +160,24 @@ public class SmartQ<U>  {
         return new QueueEstimator(this).queueEnds(getStore().getPending(tag));
     }
 
+    /**
+     * Gets the first task that has the given reference
+     * @param referenceId
+     * @return
+     */
+    public Task getFirstTaskWithReference(String referenceId) {
+        return getStore().getFirstTaskWithReference(referenceId);
+    }
+
+    /**
+     * Gets the last task that has the given reference
+     * @param referenceId
+     * @return
+     */
+    public Task getLastTaskWithReference(String referenceId) {
+        return getStore().getLastTaskWithReference(referenceId);
+    }
+
 
     /**
      * Get estimated time until queue no longer is blocked
@@ -177,6 +193,30 @@ public class SmartQ<U>  {
      */
     public long getEstimatedStartTime(Task task) throws InterruptedException {
         return new QueueEstimator(this).taskStarts(task);
+    }
+
+    /**
+     * Get estimated time until tasks with references can be executed
+     * @return
+     */
+    public long getEstimatedStartTime(String referenceId) throws InterruptedException {
+        Task task = getFirstTaskWithReference(referenceId);
+        if (task == null) {
+            return 0;
+        }
+        return new QueueEstimator(this).taskStarts(task);
+    }
+
+    /**
+     * Get estimated time until tasks with references are all done
+     * @return
+     */
+    public long getEstimatedEndTime(String referenceId) throws InterruptedException {
+        Task task = getLastTaskWithReference(referenceId);
+        if (task == null) {
+            return 0;
+        }
+        return new QueueEstimator(this).taskStarts(task) + getEstimateForTaskType(task.getType()); //include itself
     }
 
     public long getEstimateForTaskType(String type) {

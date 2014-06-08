@@ -12,13 +12,15 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class MemoryTaskStore implements TaskStore {
     private static final Logger log = Logger.getLogger(MemoryTaskStore.class);
-    private final Map<UUID, Task> tasks = new ConcurrentHashMap<UUID, Task>();
+    private final Map<UUID, Task> tasks = new ConcurrentHashMap<>();
     private final List<Task> queuedTasks = Collections.synchronizedList(new LinkedList<Task>());
     private final List<Task> runningTasks = Collections.synchronizedList(new LinkedList<Task>());
     private final List<Task> failedTasks = Collections.synchronizedList(new LinkedList<Task>());
-    private final CountMap<String> runningTypeCount = new CountMap<String>();
-    private final CountMap<String> queuedTypeCount = new CountMap<String>();
-    private EstimateMap<String> typeEstimate = new EstimateMap<String>();
+    private final CountMap<String> runningTypeCount = new CountMap<>();
+    private final CountMap<String> queuedTypeCount = new CountMap<>();
+    private EstimateMap<String> typeEstimate = new EstimateMap<>();
+    private final ReferenceMap referenceMap = new ReferenceMap();
+
 
     private final Lock lock = new ReentrantLock();
 
@@ -56,6 +58,7 @@ public class MemoryTaskStore implements TaskStore {
     @Override
     public synchronized void remove(Task task) {
         tasks.remove(task.getId());
+        referenceMap.remove(task);
         queuedTasks.remove(task);
         runningTasks.remove(task);
         for(String tag : (Set<String>)task.getTagSet()) {
@@ -75,7 +78,7 @@ public class MemoryTaskStore implements TaskStore {
         for(Task task : tasks) {
             task.setState(State.PENDING);
             this.tasks.put(task.getId(), task);
-
+            referenceMap.add(task);
             for(String tag : (Set<String>) task.getTagSet()) {
                 queuedTypeCount.increment(tag,1);
             }
@@ -113,6 +116,20 @@ public class MemoryTaskStore implements TaskStore {
         return Collections.unmodifiableList(new LinkedList<Task>(failedTasks)).iterator();
     }
 
+
+
+    @Override
+    public Task getFirstTaskWithReference(String referenceId) {
+        UUID taskId = referenceMap.getFirst(referenceId);
+        return get(taskId);
+    }
+
+    @Override
+    public Task getLastTaskWithReference(String referenceId) {
+        UUID taskId = referenceMap.getLast(referenceId);
+        return get(taskId);
+    }
+
     @Override
     public synchronized Iterator<Task> getQueued() {
         return Collections.unmodifiableList(new LinkedList<Task>(queuedTasks)).iterator();
@@ -147,6 +164,7 @@ public class MemoryTaskStore implements TaskStore {
     public void close() throws Exception {
 
     }
+
 
     @Override
     public Iterator<Task> getQueued(String type) {

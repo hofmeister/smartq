@@ -649,6 +649,64 @@ public class SmartQTest {
         assertHashEquals(Arrays.asList(a, b, c, d), estimator.getLastExecutionOrder());
     }
 
+    @Test
+    public void can_estimate_when_a_simple_group_of_tasks_starts_and_ends() throws InterruptedException {
+        SmartQ<DefaultTaskResult> queue = makeQueue();
+        Task a  = new Task("test").withReferenceId("a");
+        Task b  = new Task("test").withReferenceId("b");
+        Task c  = new Task("test").withReferenceId("b");
+        Task d  = new Task("test").withReferenceId("a");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+
+        queue.setSubscribers(1);
+        queue.setRateLimit("test", 1);
+        queue.setEstimateForTaskType("test", 1000L);
+
+
+        assertEquals(0L, queue.getEstimatedStartTime("a"));
+        assertEquals(4000L, queue.getEstimatedEndTime("a"));
+
+        assertEquals(1000L, queue.getEstimatedStartTime("b"));
+        assertEquals(3000L, queue.getEstimatedEndTime("b"));
+    }
+
+
+    @Test
+    public void can_estimate_when_a_complex_group_of_tasks_starts_and_ends() throws InterruptedException {
+        SmartQ<DefaultTaskResult> queue = makeQueue();
+        Task f  = new Task("tb").withReferenceId("a").withPriority(3);
+        Task b  = new Task("ta").withReferenceId("b").withPriority(2);
+        Task d  = new Task("tb").withReferenceId("a").withPriority(2);
+        Task a  = new Task("ta").withReferenceId("a");
+        Task c  = new Task("tb").withReferenceId("b");
+        Task e  = new Task("ta").withReferenceId("b");
+
+        queue.submit(a);
+        queue.submit(b);
+        queue.submit(c);
+        queue.submit(d);
+        queue.submit(e);
+        queue.submit(f);
+
+        queue.setSubscribers(3);
+        queue.setRateLimit("ta", 2);
+        queue.setRateLimit("tb", 3);
+        queue.setEstimateForTaskType("ta", 2000L);
+        queue.setEstimateForTaskType("tb", 1000L);
+
+        assertEquals(0L, queue.getEstimatedStartTime("a"));
+        assertEquals(3000L, queue.getEstimatedEndTime("a"));
+
+        assertEquals(0L, queue.getEstimatedStartTime("b"));
+        assertEquals(4000L, queue.getEstimatedEndTime("b"));
+    }
+
+
+
 
     @Test
     public void can_estimate_when_a_task_begins_in_simple_queues() throws InterruptedException {

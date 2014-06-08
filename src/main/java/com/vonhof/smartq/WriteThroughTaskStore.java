@@ -220,6 +220,16 @@ public class WriteThroughTaskStore implements TaskStore {
         timer.cancel();
     }
 
+    @Override
+    public Task getFirstTaskWithReference(String referenceId) {
+        return memStore.getFirstTaskWithReference(referenceId);
+    }
+
+    @Override
+    public Task getLastTaskWithReference(String referenceId) {
+        return memStore.getLastTaskWithReference(referenceId);
+    }
+
     private Future<?> doLater(final Runnable runnable) {
         final Future<?> future = laterQueue.submit(new Runnable() {
             @Override

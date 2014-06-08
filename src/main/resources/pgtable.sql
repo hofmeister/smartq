@@ -6,6 +6,7 @@ CREATE TABLE %tableName%
   priority integer,
   created bigint,
   "order" SERIAL,
+  referenceid character varying(45),
   "type" character varying(65),
   CONSTRAINT %tableName%_pkey PRIMARY KEY (id)
 )
@@ -13,10 +14,18 @@ WITH (
   OIDS=FALSE
 );
 
+CREATE INDEX %tableName%_referenceid_idx
+  ON %tableName%
+  USING btree (referenceid, priority DESC, created ASC, "order" ASC);
+
+  CREATE INDEX %tableName%_referenceid_reverse_idx
+  ON %tableName%
+  USING btree (referenceid, priority ASC, created DESC, "order" DESC);
+
 CREATE INDEX %tableName%_state_priority_idx
   ON %tableName%
   USING btree
-  (state DESC, priority DESC, created DESC, "order" ASC);
+  (state DESC, priority DESC, created ASC, "order" ASC);
 
 
 CREATE TABLE %tableName%_tags

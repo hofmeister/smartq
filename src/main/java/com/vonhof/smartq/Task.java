@@ -193,6 +193,11 @@ public class Task<T> {
                 '}';
     }
 
+    public Task withReferenceId(String referenceId) {
+        this.referenceId = referenceId;
+        return this;
+    }
+
     public static enum State {
         PENDING,
         RUNNING,

@@ -61,4 +61,8 @@ public interface TaskStore {
     void setTaskTypeEstimate(String type, long estimate);
 
     void close() throws Exception;
+
+    Task getFirstTaskWithReference(String referenceId);
+
+    Task getLastTaskWithReference(String referenceId);
 }

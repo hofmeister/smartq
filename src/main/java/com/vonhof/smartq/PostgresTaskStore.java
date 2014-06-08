@@ -104,7 +104,7 @@ public class PostgresTaskStore implements TaskStore {
                 @Override
                 public Object call() throws Exception {
                     CopyManager taskCopy = new CopyManager((BaseConnection) client().connection);
-                    CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type) FROM STDIN WITH DELIMITER '|'", tableName));
+                    CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type, referenceid, created) FROM STDIN WITH DELIMITER '|'", tableName));
 
                     for(Task task : tasks) {
                         task = new Task(task);//Copy
@@ -120,6 +120,10 @@ public class PostgresTaskStore implements TaskStore {
                         taskRowBuilder.append(task.getPriority());
                         taskRowBuilder.append("|");
                         taskRowBuilder.append(task.getType());
+                        taskRowBuilder.append("|");
+                        taskRowBuilder.append(task.getReferenceId());
+                        taskRowBuilder.append("|");
+                        taskRowBuilder.append(task.getCreated());
                         taskRowBuilder.append("\n");
 
                         byte[] taskRow = taskRowBuilder.toString().getBytes(Charset.forName("UTF-8"));
@@ -439,6 +443,32 @@ public class PostgresTaskStore implements TaskStore {
         client().close();
     }
 
+    @Override
+    public Task getFirstTaskWithReference(String referenceId) {
+        try {
+            return client().queryOne(String.format("SELECT task.id, task.content " +
+                    "FROM \"%1$s\" task " +
+                    "WHERE task.referenceid = ? " +
+                    "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName),
+                    referenceId);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public Task getLastTaskWithReference(String referenceId) {
+        try {
+            return client().queryOne(String.format("SELECT task.id, task.content " +
+                    "FROM \"%1$s\" task " +
+                    "WHERE task.referenceid = ? " +
+                    "ORDER BY task.priority ASC, task.created DESC, task.order DESC", tableName),
+                    referenceId);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public void setDocumentSerializer(DocumentSerializer documentSerializer) {
         this.documentSerializer = documentSerializer;
     }
@@ -601,7 +631,7 @@ public class PostgresTaskStore implements TaskStore {
                                             "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
                                             "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
                                             "GROUP BY task.id " +
-                                            "ORDER BY task.priority DESC, task.created DESC, task.order ASC ", tableName), state, type
+                                            "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName), state, type
                             );
                 } else {
                     return client()
@@ -612,7 +642,7 @@ public class PostgresTaskStore implements TaskStore {
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%s\" task " +
                                             "WHERE task.state = ? " +
-                                            "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName), state
+                                            "ORDER BY task.priority DESC, task.created ASC, task.order DESC ", tableName), state
                             );
                 }
             } catch (SQLException e) {
@@ -636,7 +666,7 @@ public class PostgresTaskStore implements TaskStore {
                                             "FROM \"%s\" task, \"%1$s_tags\" tag " +
                                             "WHERE state IN (?,?) AND tag.id = task.id and tag.tag = ? " +
                                             "GROUP BY task.id " +
-                                            "ORDER BY task.state DESC, task.priority DESC, task.created DESC, task.order ASC ", tableName),
+                                            "ORDER BY task.state DESC, task.priority DESC, task.created ASC, task.order ASC ", tableName),
                                     STATE_RUNNING,
                                     STATE_QUEUED,
                                     tag
@@ -650,7 +680,7 @@ public class PostgresTaskStore implements TaskStore {
                                     String.format("SELECT task.id, task.content " +
                                             "FROM \"%s\" task " +
                                             "WHERE task.state IN (?,?) " +
-                                            "ORDER BY task.state DESC, task.priority DESC, task.created DESC, task.order ASC ", tableName),
+                                            "ORDER BY task.state DESC, task.priority DESC, task.created ASC, task.order ASC ", tableName),
                                     STATE_RUNNING,
                                     STATE_QUEUED
                             );
@@ -769,7 +799,7 @@ public class PostgresTaskStore implements TaskStore {
                                             "FROM \"%1$s\" task, \"%1$s_tags\" tag " +
                                             "WHERE tag.id = task.id AND task.state = ? AND tag.tag = ? " +
                                             "GROUP BY task.id " +
-                                            "ORDER BY task.priority DESC, task.created DESC, task.order ASC ", tableName),
+                                            "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName),
                                     state, type
                             );
                 } else {
