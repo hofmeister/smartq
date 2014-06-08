@@ -6,8 +6,15 @@ import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
 import org.postgresql.PGConnection;
 import org.postgresql.PGNotification;
+import org.postgresql.copy.CopyIn;
+import org.postgresql.copy.CopyManager;
+import org.postgresql.core.BaseConnection;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PipedInputStream;
+import java.nio.charset.Charset;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.Callable;
@@ -96,33 +103,55 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
     @Override
     public void queue(final T ... tasks) {
         try {
-            for(T task : tasks) {
-                task.setState(State.PENDING);
-            }
-
-            withinTransaction(new Callable<Void>() {
+            withinTransaction(new Callable() {
                 @Override
-                public Void call() throws Exception {
-                    for(T task : tasks) {
-                        client().update(
-                                String.format("INSERT INTO \"%s\" (id, content, state, priority, type) VALUES (?, ?, ?, ?, ?)", tableName),
-                                task.getId(),
-                                documentSerializer.serialize(task).getBytes("UTF-8"),
-                                STATE_QUEUED,
-                                task.getPriority(),
-                                task.getType()
-                        );
+                public Object call() throws Exception {
+                    CopyManager taskCopy = new CopyManager((BaseConnection) client().connection);
+                    CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type) FROM STDIN WITH DELIMITER '|'", tableName));
 
+                    for(T task : tasks) {
+                        task.setState(State.PENDING);
+
+                        StringBuilder taskRowBuilder = new StringBuilder();
+                        taskRowBuilder.append(task.getId());
+                        taskRowBuilder.append("|");
+                        taskRowBuilder.append(documentSerializer.serialize(task));
+                        taskRowBuilder.append("|");
+                        taskRowBuilder.append(STATE_QUEUED);
+                        taskRowBuilder.append("|");
+                        taskRowBuilder.append(task.getPriority());
+                        taskRowBuilder.append("|");
+                        taskRowBuilder.append(task.getType());
+                        taskRowBuilder.append("\n");
+
+                        byte[] taskRow = taskRowBuilder.toString().getBytes(Charset.forName("UTF-8"));
+                        taskCopyIn.writeToCopy(taskRow, 0, taskRow.length);
+                    }
+
+                    taskCopyIn.endCopy();
+
+                    CopyManager tagCopy = new CopyManager((BaseConnection) client().connection);
+                    CopyIn tagCopyIn = tagCopy.copyIn(String.format("COPY \"%s_tags\"(id, tag) FROM STDIN WITH DELIMITER '|'", tableName));
+
+                    for(T task : tasks) {
                         for (String tag : (Set<String>) task.getTags().keySet()) {
-                            client().update(
-                                    String.format("INSERT INTO \"%s_tags\" (id, tag) VALUES (?, ?)", tableName),
-                                    task.getId(), tag
-                            );
+                            StringBuilder tagRowBuilder = new StringBuilder();
+                            tagRowBuilder.append(task.getId());
+                            tagRowBuilder.append("|");
+                            tagRowBuilder.append(tag);
+                            tagRowBuilder.append("\n");
+                            byte[] tagRow = tagRowBuilder.toString().getBytes(Charset.forName("UTF-8"));
+
+                            tagCopyIn.writeToCopy(tagRow, 0, tagRow.length);
                         }
                     }
+                    tagCopyIn.endCopy();
+
                     return null;
                 }
             });
+
+
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -166,22 +195,22 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
     @Override
     public Iterator<T> getFailed() {
-        return (Iterator<T>) client().getList(STATE_ERROR);
+        return client().getList(STATE_ERROR);
     }
 
     @Override
     public Iterator<T> getQueued() {
-        return (Iterator<T>) client().getList(STATE_QUEUED);
+        return client().getList(STATE_QUEUED);
     }
 
     @Override
     public Iterator<T> getPending() {
-        return (Iterator<T>) client().getPending();
+        return client().getPending();
     }
 
     @Override
     public Iterator<T> getPending(String tag) {
-        return (Iterator<T>) client().getPending(tag);
+        return client().getPending(tag);
     }
 
     @Override
@@ -297,6 +326,9 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
         } catch (Exception e) {
              try {
                 client().connection.rollback();
+                 if (e instanceof BatchUpdateException) {
+                     e = ((BatchUpdateException)e).getNextException();
+                 }
                 log.warn("Rolled back transaction", e);
             } catch (SQLException e1) {
                  log.debug("Failed to roll back transaction", e1);
@@ -540,6 +572,14 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             }
         }
 
+        private PreparedStatement prepared(String sql) {
+            try {
+                return connection.prepareStatement(sql);
+            } catch (SQLException e) {
+                throw new RuntimeException(sql, e);
+            }
+        }
+
         private PreparedStatement stmt(String sql, Object... args) {
             try {
                 PreparedStatement stmt = connection.prepareStatement(sql);
@@ -749,7 +789,11 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
             private final RowMapper<T> rowMapper;
             private int offset = 0;
             private int lastOffset = -1;
-            private T nextValue = null;
+            private int bufferOffset = 0;
+            private int bufferSize = 200000;
+            private PreparedStatement stmt = null;
+            private ResultSet result = null;
+            private boolean lastResult = false;
 
             public DBIterator(RowMapper<T> rowMapper, String sql, Object ... args) {
                 this.rowMapper = rowMapper;
@@ -759,39 +803,67 @@ public class PostgresTaskStore<T extends Task> implements TaskStore<T> {
 
             @Override
             public boolean hasNext() {
-                if (lastOffset == offset) {
-                    return nextValue != null;
-                }
-
-                long timeStart = System.currentTimeMillis();
-                PreparedStatement stmt = stmt(String.format("%s OFFSET %s LIMIT 1", sql, offset), args);
-                lastOffset = offset;
-                nextValue = null;
                 try {
-                    ResultSet result = stmt.executeQuery();
-                    if (result.next()) {
-                        nextValue = rowMapper.mapRow(stmt,result);
-                        return true;
+
+                    if (lastOffset == offset) {
+                        return lastResult;
                     }
-                    result.close();
+
+                    lastOffset = offset;
+
+                    if (result == null || result.isAfterLast()) {
+                        if (result != null && offset > 0) {
+                            bufferOffset += bufferSize;
+                        }
+
+                        ensureClosed();
+
+                        stmt = stmt(String.format("%s OFFSET %s LIMIT %s", sql, bufferOffset, bufferSize), args);
+
+                        result = stmt.executeQuery();
+                        result.setFetchSize(1);
+                        lastResult = result.next();
+                        if (!lastResult) {
+                            ensureClosed();
+                        }
+                        return lastResult;
+                    }
+
                 } catch (SQLException e) {
                     log.warn("Failed to execute query", e);
-                } finally {
-                    long timeTaken = System.currentTimeMillis() - timeStart;
-                    if (log.isDebugEnabled() && timeTaken > 200) {
-                        log.debug(String.format("Query finished in %s ms: %s", timeTaken, sql));
-                    }
-                    try {
-                        stmt.close();
-                    } catch (SQLException e) {}
                 }
-                return false;
+
+                return lastResult = true;
+            }
+
+            private void ensureClosed() throws SQLException {
+                if (stmt != null) {
+                    stmt.close();
+                    stmt = null;
+                }
+                if (result != null) {
+                    result.close();
+                    result = null;
+                }
             }
 
             @Override
             public T next() {
                 offset++;
-                return nextValue;
+                try {
+                    T out = rowMapper.mapRow(stmt, result);
+                    result.next();
+                    return out;
+                } catch (SQLException e) {
+                    log.error("Failed to map row", e);
+                }
+                return null;
+            }
+
+            public void close() {
+                try {
+                    ensureClosed();
+                } catch (SQLException e) {}
             }
 
             @Override
