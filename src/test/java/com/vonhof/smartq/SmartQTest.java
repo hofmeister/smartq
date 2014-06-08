@@ -919,6 +919,9 @@ public class SmartQTest {
         System.out.println(String.format("ETA %s ms, Calculation time:  %s ms, Q Size: %s, Free mem: %s",
                 eta, timeTaken, totalSize, Runtime.getRuntime().freeMemory()));
 
+        assertEquals(11488950L , eta );
+        assertEquals(17300 , totalSize);
+
         if (queue.getStore() instanceof PostgresTaskStore) {
             assertTrue("For a factor = 100 this should be around less than 2500ms", timeTaken < 2500L);
         } else if (queue.getStore() instanceof MemoryTaskStore) {
