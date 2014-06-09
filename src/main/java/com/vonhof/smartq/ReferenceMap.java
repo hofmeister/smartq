@@ -55,6 +55,12 @@ public class ReferenceMap {
         return orderInfo != null ? orderInfo.getTaskId() : null;
     }
 
+    public void removeRef(String referenceId) {
+        lastTasks.remove(referenceId);
+        firstTasks.remove(referenceId);
+        refCounts.remove(referenceId);
+    }
+
 
     private static class TaskOrderInfo {
         private final long created;

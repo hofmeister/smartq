@@ -288,7 +288,6 @@ public class SmartQ<U>  {
     public boolean cancel(UUID taskId, final boolean reschedule) throws InterruptedException {
         Task t = getStore().get(taskId);
         return cancel(t, reschedule);
-
     }
     
     public boolean cancel(final Task task, final boolean reschedule) throws InterruptedException {
@@ -313,6 +312,11 @@ public class SmartQ<U>  {
         }
 
         return true;
+    }
+
+    public void cancelByReference(String referenceId) {
+        getStore().cancelByReference(referenceId);
+        getStore().signalChange();
     }
 
     

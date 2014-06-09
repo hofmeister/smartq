@@ -988,9 +988,9 @@ public class SmartQTest {
         if (queue.getStore() instanceof PostgresTaskStore) {
             assertTrue("For a factor = 100 this should be around less than 2500ms", timeTaken < 2500L);
         } else if (queue.getStore() instanceof MemoryTaskStore) {
-            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 400L);
+            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 500L);
         } else if (queue.getStore() instanceof WriteThroughTaskStore) {
-            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 400L);
+            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 500L);
         } else {
             fail("Unknown task store");
         }

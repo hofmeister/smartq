@@ -3,6 +3,7 @@ package com.vonhof.smartq;
 
 import com.vonhof.smartq.Task.State;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
 import org.postgresql.PGConnection;
@@ -94,6 +95,15 @@ public class PostgresTaskStore implements TaskStore {
     public void remove(UUID id) {
         try {
             client().update(String.format("DELETE FROM \"%s\" WHERE id = ?", tableName), id);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public void cancelByReference(String referenceId) {
+        try {
+            client().update(String.format("DELETE FROM \"%s\" WHERE referenceid = ? AND state != ?", tableName), referenceId, STATE_RUNNING);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -227,7 +237,7 @@ public class PostgresTaskStore implements TaskStore {
     @Override
     public long getTaskTypeEstimate(String type) {
         try {
-            return client().queryForLong(String.format("SELECT sum(duration) / count(*) from \"%s_estimates\" WHERE type = ?", tableName), type);
+            return client().queryForLong(String.format("SELECT sum(duration) / count(*) from \"%s_estimates\" WHERE type = ?", tableName), DigestUtils.md5Hex(type));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -239,7 +249,7 @@ public class PostgresTaskStore implements TaskStore {
 
             client().update(
                     String.format("INSERT INTO \"%s_estimates\" (type, duration) VALUES (?, ?)", tableName),
-                    type,
+                    DigestUtils.md5Hex(type),
                     duration
             );
         } catch (Exception e) {
@@ -262,7 +272,7 @@ public class PostgresTaskStore implements TaskStore {
 
                     client().update(
                             String.format("INSERT INTO \"%s_estimates\" (type, duration) VALUES (?, ?)", tableName),
-                            type,
+                            DigestUtils.md5Hex(type),
                             estimate
                     );
 

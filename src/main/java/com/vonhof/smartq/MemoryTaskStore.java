@@ -13,9 +13,9 @@ import java.util.concurrent.locks.ReentrantLock;
 public class MemoryTaskStore implements TaskStore {
     private static final Logger log = Logger.getLogger(MemoryTaskStore.class);
     private final Map<UUID, Task> tasks = new ConcurrentHashMap<>();
-    private final List<Task> queuedTasks = Collections.synchronizedList(new LinkedList<Task>());
-    private final List<Task> runningTasks = Collections.synchronizedList(new LinkedList<Task>());
-    private final List<Task> failedTasks = Collections.synchronizedList(new LinkedList<Task>());
+    private final List<Task> queuedTasks = new LinkedList<Task>();
+    private final List<Task> runningTasks = new LinkedList<Task>();
+    private final List<Task> failedTasks = new LinkedList<Task>();
     private final CountMap<String> runningTypeCount = new CountMap<>();
     private final CountMap<String> queuedTypeCount = new CountMap<>();
     private EstimateMap<String> typeEstimate = new EstimateMap<>();
@@ -59,11 +59,16 @@ public class MemoryTaskStore implements TaskStore {
     public synchronized void remove(Task task) {
         tasks.remove(task.getId());
         referenceMap.remove(task);
-        queuedTasks.remove(task);
-        runningTasks.remove(task);
+        boolean queuedRemoved = queuedTasks.remove(task);
+        boolean runningRemoved = runningTasks.remove(task);
+
         for(String tag : (Set<String>)task.getTagSet()) {
-            runningTypeCount.decrement(tag, 1);
-            queuedTypeCount.decrement(tag,1);    
+            if (runningRemoved) {
+                runningTypeCount.decrement(tag, 1);
+            }
+            if (queuedRemoved) {
+                queuedTypeCount.decrement(tag,1);
+            }
         }
         
     }
@@ -128,6 +133,23 @@ public class MemoryTaskStore implements TaskStore {
     public Task getLastTaskWithReference(String referenceId) {
         UUID taskId = referenceMap.getLast(referenceId);
         return get(taskId);
+    }
+
+    @Override
+    public synchronized void cancelByReference(String referenceId) {
+        referenceMap.removeRef(referenceId);
+        Iterator<Task> iterator = queuedTasks.iterator();
+        while(iterator.hasNext()) {
+            Task task = iterator.next();
+            if (referenceId.equals(task.getReferenceId())) {
+                tasks.remove(task.getId());
+                iterator.remove();
+
+                for(String tag : (Set<String>)task.getTagSet()) {
+                    queuedTypeCount.decrement(tag,1);
+                }
+            }
+        }
     }
 
     @Override

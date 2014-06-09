@@ -90,4 +90,8 @@ public class CountMap<T>  {
     public void clear() {
         map.clear();
     }
+
+    public void remove(T referenceId) {
+        map.remove(referenceId);
+    }
 }

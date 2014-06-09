@@ -18,7 +18,7 @@ CREATE INDEX %tableName%_referenceid_idx
   ON %tableName%
   USING btree (referenceid, priority DESC, created ASC, "order" ASC);
 
-  CREATE INDEX %tableName%_referenceid_reverse_idx
+CREATE INDEX %tableName%_referenceid_reverse_idx
   ON %tableName%
   USING btree (referenceid, priority ASC, created DESC, "order" DESC);
 

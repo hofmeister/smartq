@@ -34,10 +34,25 @@ public class Task<T> {
         this.ended = task.ended;
         this.priority = task.priority;
         this.attempts = task.attempts;
-        this.data = task.data;
         this.referenceId = task.referenceId;
         this.tags = task.tags;
         this.type = task.type;
+        this.data = task.data;
+    }
+
+    public static Task copyNoDate(Task task) {
+        Task out = new Task();
+        out.id = UUID.randomUUID();
+        out.state = task.state;
+        out.created = task.created;
+        out.started = task.started;
+        out.ended = task.ended;
+        out.priority = task.priority;
+        out.attempts = task.attempts;
+        out.referenceId = task.referenceId;
+        out.tags = task.tags;
+        out.type = task.type;
+        return out;
     }
 
     public Task withPriority(int priority) {

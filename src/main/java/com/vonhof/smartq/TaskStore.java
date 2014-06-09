@@ -65,4 +65,6 @@ public interface TaskStore {
     Task getFirstTaskWithReference(String referenceId);
 
     Task getLastTaskWithReference(String referenceId);
+
+    void cancelByReference(String referenceId);
 }

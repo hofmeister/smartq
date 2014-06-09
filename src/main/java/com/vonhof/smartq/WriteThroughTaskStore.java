@@ -33,6 +33,7 @@ public class WriteThroughTaskStore implements TaskStore {
             return;
         }
 
+        log.info("Loading data from disk store");
         Iterator<Task> queued = diskStore.getQueued();
         List<Task> tasks = new LinkedList<>();
         while(queued.hasNext()) {
@@ -43,6 +44,8 @@ public class WriteThroughTaskStore implements TaskStore {
         for(String tag : memStore.getTags()) {
             memStore.setTaskTypeEstimate(tag,diskStore.getTaskTypeEstimate(tag));
         }
+
+        log.info(String.format("Loaded %s tasks from disk store into memory", tasks.size()));
     }
 
     @Override
@@ -52,31 +55,31 @@ public class WriteThroughTaskStore implements TaskStore {
 
     @Override
     public void remove(final Task task) {
-        memStore.remove(task);
         doLater(new Runnable() {
             @Override
             public void run() {
                 diskStore.remove(task);
             }
         });
+
+        memStore.remove(task);
     }
 
     @Override
     public void remove(final UUID id) {
-        memStore.remove(id);
-
         doLater(new Runnable() {
             @Override
             public void run() {
                 diskStore.remove(id);
             }
         });
+
+        memStore.remove(id);
     }
 
     @Override
     public void queue(final Task... tasks) {
         memStore.queue(tasks);
-
         doLater(new Runnable() {
             @Override
             public void run() {
@@ -87,27 +90,27 @@ public class WriteThroughTaskStore implements TaskStore {
 
     @Override
     public void run(final Task task) {
-        memStore.run(task);
-
         doLater(new Runnable() {
             @Override
             public void run() {
                 diskStore.run(task);
             }
         });
+        memStore.run(task);
 
     }
 
     @Override
     public void failed(final Task task) {
-        memStore.failed(task);
-
         doLater(new Runnable() {
             @Override
             public void run() {
                 diskStore.failed(task);
             }
         });
+        memStore.failed(task);
+
+
     }
 
     @Override
@@ -202,24 +205,26 @@ public class WriteThroughTaskStore implements TaskStore {
 
     @Override
     public void addTaskTypeDuration(final String type, final long duration) {
-        memStore.addTaskTypeDuration(type, duration);
         doLater(new Runnable() {
             @Override
             public void run() {
                 diskStore.addTaskTypeDuration(type, duration);
             }
         });
+        memStore.addTaskTypeDuration(type, duration);
+
     }
 
     @Override
     public void setTaskTypeEstimate(final String type, final long estimate) {
-        memStore.setTaskTypeEstimate(type, estimate);
         doLater(new Runnable() {
             @Override
             public void run() {
                 diskStore.setTaskTypeEstimate(type, estimate);
             }
         });
+        memStore.setTaskTypeEstimate(type, estimate);
+
     }
 
     @Override
@@ -250,20 +255,36 @@ public class WriteThroughTaskStore implements TaskStore {
         return memStore.getLastTaskWithReference(referenceId);
     }
 
+    @Override
+    public void cancelByReference(final String referenceId) {
+        doLater(new Runnable() {
+            @Override
+            public void run() {
+                diskStore.cancelByReference(referenceId);
+            }
+        });
+        memStore.cancelByReference(referenceId);
+
+    }
+
     private void doLater(final Runnable runnable) {
         if (closed) {
+            synchronized (tasks) {
+                tasks.notifyAll();
+            }
             throw new RuntimeException("Cannot add new tasks to a closed store");
         }
-        synchronized (tasks) {
-            tasks.addFirst(new Runnable() {
-                @Override
-                public void run() {
-                    synchronized (diskStore) {
-                        runnable.run();
-                    }
-                }
-            });
 
+        tasks.addFirst(new Runnable() {
+            @Override
+            public void run() {
+            synchronized (diskStore) {
+                runnable.run();
+            }
+            }
+        });
+
+        synchronized (tasks) {
             tasks.notifyAll();
         }
     }
@@ -271,7 +292,7 @@ public class WriteThroughTaskStore implements TaskStore {
     public void waitForAsyncTasks() throws InterruptedException {
         while(!tasks.isEmpty()) {
             synchronized (tasks) {
-                tasks.wait(5000);
+                tasks.wait(60000);
             }
         }
     }
@@ -286,9 +307,9 @@ public class WriteThroughTaskStore implements TaskStore {
             while(!tasks.isEmpty() || (!interrupted() && !closed)) {
 
                 while(!tasks.isEmpty()) {
-                    Runnable task = null;
+                    Runnable task = tasks.pollLast();
                     synchronized (tasks) {
-                        task = tasks.pollLast();
+                        tasks.notifyAll();
                     }
 
                     try {
@@ -300,7 +321,7 @@ public class WriteThroughTaskStore implements TaskStore {
 
                 try {
                     synchronized (tasks) {
-                        tasks.wait(5000);
+                        tasks.wait(60000);
                     }
                 } catch (InterruptedException e) {
                     break;
