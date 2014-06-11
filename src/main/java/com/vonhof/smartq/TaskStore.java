@@ -67,4 +67,12 @@ public interface TaskStore {
     Task getLastTaskWithReference(String referenceId);
 
     void cancelByReference(String referenceId);
+
+    int getMaxRetries(Set<String> tags);
+
+    void setMaxRetries(String tag, int limit);
+
+    int getRateLimit(String tag);
+
+    void setRateLimit(String tag, int limit);
 }

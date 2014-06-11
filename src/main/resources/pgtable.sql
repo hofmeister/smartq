@@ -54,3 +54,26 @@ WITH (
     OIDS=FALSE
 );
 
+
+CREATE TABLE %tableName%_ratelimits
+(
+
+  "tag" character varying(32) NOT NULL,
+  ratelimit bigint,
+  CONSTRAINT %tableName%_ratelimits_pkey PRIMARY KEY (tag)
+)
+WITH (
+    OIDS=FALSE
+);
+
+CREATE TABLE %tableName%_retrylimits
+(
+
+  "tag" character varying(32) NOT NULL,
+  retrylimit bigint,
+  CONSTRAINT %tableName%_retrylimits_pkey PRIMARY KEY (tag)
+)
+WITH (
+    OIDS=FALSE
+);
+

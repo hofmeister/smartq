@@ -21,6 +21,9 @@ public class MemoryTaskStore implements TaskStore {
     private EstimateMap<String> typeEstimate = new EstimateMap<>();
     private final ReferenceMap referenceMap = new ReferenceMap();
 
+    private final Map<String, Integer> taskTagRateLimits = new HashMap<>();
+    private final Map<String, Integer> taskTagRetryLimits = new HashMap<>();
+
 
     private final Lock lock = new ReentrantLock();
 
@@ -47,6 +50,53 @@ public class MemoryTaskStore implements TaskStore {
                 return null;
             }
         });
+    }
+
+
+
+    /**
+     * Limit the throughput of a specific tag ( e.g. how many tasks of the given tag that may be processed
+     * concurrently )
+     * @param tag
+     * @param limit
+     */
+    @Override
+    public final void setRateLimit(String tag, int limit) {
+        taskTagRateLimits.put(tag, limit);
+    }
+
+    /**
+     * Gets the max allowed concurrent tasks for a given tag. Returns -1 if no limit is specified.
+     * @param tag
+     * @return
+     */
+    @Override
+    public final int getRateLimit(String tag) {
+        Integer rateLimit = taskTagRateLimits.get(tag);
+        if (rateLimit != null) {
+            return rateLimit;
+        }
+
+        return -1;
+    }
+
+
+    @Override
+    public final void setMaxRetries(String tag, int limit) {
+        taskTagRetryLimits.put(tag, limit);
+    }
+
+    @Override
+    public final int getMaxRetries(Set<String> tags) {
+        int max = -1;
+        for(String tag : tags) {
+            if (taskTagRetryLimits.containsKey(tag) &&
+                    (max == -1 || taskTagRetryLimits.get(tag) < max)) {
+                max = taskTagRetryLimits.get(tag);
+            }
+        }
+
+        return max;
     }
 
 
@@ -147,6 +197,19 @@ public class MemoryTaskStore implements TaskStore {
 
                 for(String tag : (Set<String>)task.getTagSet()) {
                     queuedTypeCount.decrement(tag,1);
+                }
+            }
+        }
+
+        Iterator<Task> runIterator = runningTasks.iterator();
+        while(runIterator.hasNext()) {
+            Task runningTask = runIterator.next();
+            if (referenceId.equals(runningTask.getReferenceId())) {
+                tasks.remove(runningTask.getId());
+                runIterator.remove();
+
+                for(String tag : (Set<String>)runningTask.getTagSet()) {
+                    runningTypeCount.decrement(tag,1);
                 }
             }
         }

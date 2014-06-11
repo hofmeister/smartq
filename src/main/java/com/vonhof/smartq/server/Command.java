@@ -49,7 +49,8 @@ public class Command {
         NACK(UUID.class, Boolean.class),
         RECOVER(UUIDList.class),
         ERROR(UUID.class),
-        PUBLISH(Task.class);
+        PUBLISH(Task.class),
+        CANCEL_REF(String.class);
 
 
         private final Class[] argTypes;

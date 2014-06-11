@@ -5,6 +5,7 @@ import com.vonhof.smartq.Task.State;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.postgresql.PGConnection;
 import org.postgresql.PGNotification;
@@ -103,7 +104,81 @@ public class PostgresTaskStore implements TaskStore {
     @Override
     public void cancelByReference(String referenceId) {
         try {
-            client().update(String.format("DELETE FROM \"%s\" WHERE referenceid = ? AND state != ?", tableName), referenceId, STATE_RUNNING);
+            client().update(String.format("DELETE FROM \"%s\" WHERE referenceid = ?", tableName), referenceId);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Limit the throughput of a specific tag ( e.g. how many tasks of the given tag that may be processed
+     * concurrently )
+     * @param tag
+     * @param limit
+     */
+    @Override
+    public final void setRateLimit(final String tag, final int limit) {
+        withinTransaction(new Callable() {
+            @Override
+            public Object call() throws Exception {
+                client().update(String.format("DELETE FROM %s_ratelimits WHERE tag = ?", tableName), tag);
+                client().update(String.format("INSERT INTO %s_ratelimits (tag,ratelimit) VALUES (?,?)", tableName), tag, limit);
+                return null;
+            }
+        });
+    }
+
+    public final CountMap<String> getAllRateLimit() {
+        try {
+            return client().queryForCountMap(String.format("SELECT tag,ratelimit from %s_ratelimits", tableName));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Gets the max allowed concurrent tasks for a given tag. Returns -1 if no limit is specified.
+     * @param tag
+     * @return
+     */
+    @Override
+    public final int getRateLimit(String tag) {
+        try {
+            return (int) client().queryForLong(String.format("SELECT ratelimit from %s_ratelimits where tag = ?", tableName), tag);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    public final CountMap<String> getAllRetryLimits() {
+        try {
+            return client().queryForCountMap(String.format("SELECT tag,retrylimit from %s_retrylimits", tableName));
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
+    public final void setMaxRetries(final String tag, final int limit) {
+        withinTransaction(new Callable() {
+            @Override
+            public Object call() throws Exception {
+                client().update(String.format("DELETE FROM %s_retrylimits WHERE tag = ?", tableName), tag);
+                client().update(String.format("INSERT INTO %s_retrylimits (tag,retrylimit) VALUES (?,?)", tableName), tag, limit);
+                return null;
+            }
+        });
+    }
+
+    @Override
+    public final int getMaxRetries(Set<String> tags) {
+        try {
+            long out = client().queryForLong(String.format("SELECT max(retrylimit) from %s_retrylimits where tag IN ('%s')", tableName, StringUtils.join(tags,"','")));
+            if (out < 1) {
+                return -1;
+            }
+            return (int)out;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -455,6 +530,8 @@ public class PostgresTaskStore implements TaskStore {
     public synchronized void dropTable() throws SQLException {
         client().update(String.format("DROP TABLE \"%s_estimates\"", tableName));
         client().update(String.format("DROP TABLE \"%s_tags\"", tableName));
+        client().update(String.format("DROP TABLE \"%s_retrylimits\"", tableName));
+        client().update(String.format("DROP TABLE \"%s_ratelimits\"", tableName));
         client().update(String.format("DROP TABLE \"%s\"", tableName));
     }
 

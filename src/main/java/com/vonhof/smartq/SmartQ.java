@@ -10,8 +10,7 @@ public class SmartQ<U>  {
 
     private static final Logger log = Logger.getLogger(SmartQ.class);
 
-    private final Map<String, Integer> taskTagRateLimits = new HashMap<String, Integer>();
-    private final Map<String, Integer> taskTagRetryLimits = new HashMap<String, Integer>();
+
 
     private final TaskStore store;
     private volatile int subscribers = 0;
@@ -119,7 +118,7 @@ public class SmartQ<U>  {
      * @param limit
      */
     public final void setRateLimit(String tag, int limit) {
-        taskTagRateLimits.put(tag, limit);
+        getStore().setRateLimit(tag, limit);
     }
 
     /**
@@ -128,27 +127,19 @@ public class SmartQ<U>  {
      * @return
      */
     public final int getRateLimit(String tag) {
-        Integer rateLimit = taskTagRateLimits.get(tag);
-        if (rateLimit != null) {
+        int rateLimit = getStore().getRateLimit(tag);
+        if (rateLimit > 0) {
             return rateLimit;
         }
         return getConcurrency();
     }
 
     public final void setMaxRetries(String tag, int limit) {
-        taskTagRetryLimits.put(tag, limit);
+        getStore().setMaxRetries(tag, limit);
     }
 
     public final int getMaxRetries(Set<String> tags) {
-        int max = -1;
-        for(String tag : tags) {
-            if (taskTagRetryLimits.containsKey(tag) &&
-                    (max == -1 || taskTagRetryLimits.get(tag) < max)) {
-                max = taskTagRetryLimits.get(tag);
-            }
-        }
-
-        return max;
+        return getStore().getMaxRetries(tags);
     }
 
     /**
@@ -323,7 +314,10 @@ public class SmartQ<U>  {
     public void acknowledge(final UUID id, U response) throws InterruptedException {
         final Task task = getStore().get(id);
         if (task == null) {
-            throw new IllegalArgumentException("Task not found: " + id);
+            if (log.isInfoEnabled()) {
+                log.info(String.format("Task not found: %s", id));
+            }
+            return;
         }
 
         task.setState(Task.State.DONE);
@@ -342,7 +336,10 @@ public class SmartQ<U>  {
 
         final Task task = getStore().get(id);
         if (task == null) {
-            throw new IllegalArgumentException("Task not found: " + id);
+            if (log.isInfoEnabled()) {
+                log.info(String.format("Task not found: %s", id));
+            }
+            return;
         }
 
         task.setState(State.ERROR);
@@ -462,7 +459,9 @@ public class SmartQ<U>  {
                 long running = tasksRunning.get(tag);
 
                 if (running >= limit) {
-                    log.debug(String.format("Rate limited tag: %s (Running: %s, Limit: %s)",tag, running, limit));
+                    if (log.isTraceEnabled()) {
+                        log.trace(String.format("Rate limited tag: %s (Running: %s, Limit: %s)",tag, running, limit));
+                    }
                     return true;
                 }
             }

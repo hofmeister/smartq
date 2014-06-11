@@ -356,6 +356,9 @@ public class SmartQServer {
                 case PUBLISH:
                     queue.submit((Task) args[0]);
                     break;
+                case CANCEL_REF:
+                    queue.cancelByReference((String) args[0]);
+                    break;
 
             }
         }

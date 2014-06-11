@@ -4,6 +4,7 @@ package com.vonhof.smartq.server;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.mina.JacksonCodecFactory;
 import com.vonhof.smartq.server.Command.Type;
+import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.apache.mina.core.RuntimeIoException;
 import org.apache.mina.core.future.ConnectFuture;
@@ -16,14 +17,7 @@ import org.apache.mina.transport.socket.nio.NioSocketConnector;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Set;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -46,6 +40,8 @@ public class SmartQClient {
     private final SmartQClientMessageHandler responseHandler;
 
     private final Set<UUID> activeTaskIds = Collections.synchronizedSet(new HashSet<UUID>());
+    private final Map<UUID, String> taskReference = new HashMap<>();
+    private final Map<String, Set<UUID>> referenceTasks = new HashMap<>();
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
     private final Executor executor;
     private final int threads;
@@ -304,18 +300,48 @@ public class SmartQClient {
     public void acknowledge(UUID taskId) throws InterruptedException {
         if (send(new Command(Type.ACK, taskId))) {
             activeTaskIds.remove(taskId);
+            removeReferenceIndex(taskId);
         }
     }
 
     public void cancel(UUID taskId, boolean requeue) throws InterruptedException {
         if (send(new Command(Type.NACK, taskId, requeue))) {
             activeTaskIds.remove(taskId);
+            removeReferenceIndex(taskId);
+        }
+    }
+
+    public void cancelByReference(String referenceId) throws InterruptedException {
+        if (send(new Command(Type.CANCEL_REF, referenceId))) {
+            Set<UUID> uuids = referenceTasks.get(referenceId);
+            if (uuids != null) {
+                activeTaskIds.removeAll(uuids);
+                for(UUID taskId : uuids) {
+                    taskReference.remove(taskId);
+                }
+                referenceTasks.remove(referenceId);
+            }
         }
     }
 
     public void failed(UUID taskId) throws InterruptedException {
         if (send(new Command(Type.ERROR, taskId))) {
             activeTaskIds.remove(taskId);
+            removeReferenceIndex(taskId);
+        }
+    }
+
+    private void removeReferenceIndex(UUID taskId) {
+        String refId = taskReference.get(taskId);
+        if (refId != null) {
+            taskReference.remove(taskId);
+            Set<UUID> uuids = referenceTasks.get(refId);
+            if (uuids != null) {
+                uuids.remove(taskId);
+                if (uuids.isEmpty()) {
+                    referenceTasks.remove(refId);
+                }
+            }
         }
     }
 
@@ -361,6 +387,8 @@ public class SmartQClient {
         return "C{" + id + '}';
     }
 
+
+
     private class ClientSessionHandler implements IoHandler {
 
         @Override
@@ -402,6 +430,16 @@ public class SmartQClient {
                 }
 
                 activeTaskIds.add(task.getId());
+                if (!StringUtils.isEmpty(task.getReferenceId())) {
+                    Set<UUID> uuids = referenceTasks.get(task.getReferenceId());
+                    if (uuids == null) {
+                        uuids = new HashSet<>();
+                        referenceTasks.put(task.getReferenceId(), uuids);
+                    }
+                    uuids.add(task.getId());
+                    taskReference.put(task.getId(), task.getReferenceId());
+                }
+
 
                 executor.execute(new Runnable() {
                     @Override

@@ -27,6 +27,7 @@ public class WriteThroughQueueTest extends SmartQTest {
 
     @After
     public void tearDown() throws Exception {
+        store.waitForAsyncTasks();
         pgStore.dropTable();
         store.close();
     }
