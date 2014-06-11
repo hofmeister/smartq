@@ -249,12 +249,17 @@ public class SmartQ<U>  {
     }
     
     public boolean submit(final Task ... tasks) throws InterruptedException {
+        Map<String,Integer> rateLimits = new HashMap<>();
         for(Task task : tasks) {
             for(Map.Entry<String,Integer> entry : (Set<Map.Entry<String,Integer>>)task.getTags().entrySet()) {
-                if (entry.getValue() > 0) {
-                    setRateLimit(entry.getKey(), entry.getValue());
+                if (entry.getValue() > 0 && !rateLimits.containsKey(entry.getKey())) {
+                    rateLimits.put(entry.getKey(), entry.getValue());
                 }
             }
+        }
+
+        for(Map.Entry<String,Integer> entry : rateLimits.entrySet()) {
+            setRateLimit(entry.getKey(), entry.getValue());
         }
 
         getStore().queue(tasks);
@@ -547,9 +552,6 @@ public class SmartQ<U>  {
                 Task t = getStore().get(taskId);
                 if (t == null) {
                     return null;
-                }
-                if (t.isRunning()) {
-                    return null; //Already running
                 }
 
                 acquireTask(t);
