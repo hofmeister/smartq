@@ -152,7 +152,7 @@ public class SmartQClient {
             connector = null;
             session = null;
 
-            if (retryTimeout > 1) {
+            if (retryTimeout > 1 && !reconnecting) {
                 if (log.isInfoEnabled()) {
                     log.info("Failed to connect to " + hostAddress + ". Trying again in " + retryTimeout + "ms");
                 }
@@ -161,6 +161,8 @@ public class SmartQClient {
                     wait(retryTimeout);
                 }
                 connect();
+            } else {
+                throw new IOException(e);
             }
 
         }
@@ -264,13 +266,12 @@ public class SmartQClient {
         }
         if (!activeTaskIds.isEmpty()) {
             if (log.isInfoEnabled()) {
-                log.info("Sending recover request to newly opened host: " + activeTaskIds.size());
+                log.info("Sending recover request to newly opened host: " + activeTaskIds.toString());
             }
 
             if (!send(new Command(Type.RECOVER, new UUIDList(activeTaskIds)))) {
                 throw new RuntimeException("Timed out while waiting for recover");
             }
-            activeTaskIds.clear();
         }
 
         if (!queuedMessages.isEmpty()) {
