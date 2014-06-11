@@ -58,7 +58,7 @@ WITH (
 CREATE TABLE %tableName%_ratelimits
 (
 
-  "tag" character varying(32) NOT NULL,
+  "tag" character varying(64) NOT NULL,
   ratelimit bigint,
   CONSTRAINT %tableName%_ratelimits_pkey PRIMARY KEY (tag)
 )
@@ -69,7 +69,7 @@ WITH (
 CREATE TABLE %tableName%_retrylimits
 (
 
-  "tag" character varying(32) NOT NULL,
+  "tag" character varying(64) NOT NULL,
   retrylimit bigint,
   CONSTRAINT %tableName%_retrylimits_pkey PRIMARY KEY (tag)
 )
