@@ -367,9 +367,15 @@ public class WriteThroughTaskStore implements TaskStore {
             while (!tasks.isEmpty() || (!interrupted() && !closed)) {
 
                 while (!tasks.isEmpty()) {
-                    Runnable task = tasks.pollLast();
+                    Runnable task = null;
                     synchronized (tasks) {
-                        tasks.notifyAll();
+                        task = tasks.pollLast();
+                        if (log.isDebugEnabled()) {
+                            log.debug(String.format("Getting async task - %s left", tasks.size()));
+                        }
+                        if (task != null) {
+                            tasks.notifyAll();
+                        }
                     }
 
                     if (task == null) {
