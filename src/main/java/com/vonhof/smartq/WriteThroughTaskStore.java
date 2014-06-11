@@ -52,8 +52,14 @@ public class WriteThroughTaskStore implements TaskStore {
                     memStore.setMaxRetries(entry.getKey(), (int) limit);
                 }
 
+
                 Iterator<Task> queued = diskStore.getQueued();
+                Iterator<Task> running = diskStore.getRunning();
                 LinkedList<Task> tasks = new LinkedList<>();
+
+                while( running.hasNext() ) {
+                    memStore.queue(running.next());
+                }
 
                 while (queued.hasNext()) {
                     Task task = queued.next();
@@ -335,18 +341,19 @@ public class WriteThroughTaskStore implements TaskStore {
             throw new RuntimeException("Cannot add new tasks to a closed store");
         }
 
-        tasks.addFirst(new Runnable() {
-            @Override
-            public void run() {
-                synchronized (diskStore) {
-                    runnable.run();
-                }
-            }
-        });
-
         synchronized (tasks) {
+            tasks.addFirst(new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (diskStore) {
+                        runnable.run();
+                    }
+                }
+            });
+
             tasks.notifyAll();
         }
+
     }
 
     public void waitForAsyncTasks() throws InterruptedException {
@@ -397,8 +404,11 @@ public class WriteThroughTaskStore implements TaskStore {
                 }
             }
 
+
             try {
-                tasks.clear();
+                synchronized (tasks) {
+                    tasks.clear();
+                }
                 diskStore.close();
             } catch (Exception e) {
                 log.warn("Failed to close disk store", e);
