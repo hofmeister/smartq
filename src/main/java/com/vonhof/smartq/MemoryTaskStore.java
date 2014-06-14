@@ -62,7 +62,17 @@ public class MemoryTaskStore implements TaskStore {
      */
     @Override
     public final void setRateLimit(String tag, int limit) {
-        taskTagRateLimits.put(tag, limit);
+        if (limit < 1) {
+            taskTagRateLimits.remove(tag);
+        } else {
+            taskTagRateLimits.put(tag, limit);
+        }
+
+    }
+
+    @Override
+    public CountMap<String> getAllRateLimit() {
+        return new CountMap<>(taskTagRateLimits);
     }
 
     /**
@@ -83,7 +93,11 @@ public class MemoryTaskStore implements TaskStore {
 
     @Override
     public final void setMaxRetries(String tag, int limit) {
-        taskTagRetryLimits.put(tag, limit);
+        if (limit < 1) {
+            taskTagRetryLimits.remove(tag);
+        } else {
+            taskTagRetryLimits.put(tag, limit);
+        }
     }
 
     @Override

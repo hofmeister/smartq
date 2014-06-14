@@ -142,6 +142,14 @@ public class SmartQ<U>  {
         return getStore().getMaxRetries(tags);
     }
 
+
+
+    public Map<String, Long> getEstimatesForReferenceGroups() throws InterruptedException {
+        QueueEstimator estimator = new QueueEstimator(this);
+        estimator.queueEnds(getStore().getPending());
+        return estimator.getReferenceETA();
+    }
+
     /**
      * Get estimated time until queue is completely done
      * @param tag
@@ -512,11 +520,11 @@ public class SmartQ<U>  {
             public Object call() throws InterruptedException {
                 List<Task> tasks = new LinkedList<Task>();
                 Iterator<Task> running = getStore().getRunning();
-                while(running.hasNext()) {
+                while (running.hasNext()) {
                     tasks.add(running.next());
                 }
 
-                for(Task task : tasks) {
+                for (Task task : tasks) {
                     getStore().remove(task);
                     task.reset();
                     getStore().queue(task);

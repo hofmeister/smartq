@@ -333,6 +333,11 @@ public class WriteThroughTaskStore implements TaskStore {
         });
     }
 
+    @Override
+    public CountMap<String> getAllRateLimit() {
+        return memStore.getAllRateLimit();
+    }
+
     private void doLater(final Runnable runnable) {
         if (closed) {
             synchronized (tasks) {

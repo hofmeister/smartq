@@ -287,6 +287,7 @@ public class SmartQServer {
                     }
 
                     if (!sessionReady.contains(session.getId())) {
+                        clientTaskLimit.put(session.getRemoteAddress(), 1);
                         if (args.length > 0 && args[0] instanceof Integer) {
                             clientTaskLimit.put(session.getRemoteAddress(), (Integer) args[0]);
                         }
@@ -296,7 +297,7 @@ public class SmartQServer {
                             taskEmitter.notifyAll();
                         }
 
-                        queue.setSubscribers(subscriberCount.incrementAndGet());
+                        queue.setSubscribers(subscriberCount.addAndGet(clientTaskLimit.get(session.getRemoteAddress())));
 
                         if (log.isInfoEnabled()) {
                             log.info(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: %s",session.getRemoteAddress(), getTaskLimit(session), queue.getSubscribers()));
@@ -384,9 +385,10 @@ public class SmartQServer {
 
             synchronized (clientTask) {
                 clientCount.decrementAndGet();
+                Integer integer = clientTaskLimit.get(session.getRemoteAddress());
 
                 if (sessionReady.contains(session.getId())) {
-                    queue.setSubscribers(subscriberCount.decrementAndGet());
+                    queue.setSubscribers(subscriberCount.addAndGet(integer == null ? -1 :  (integer*-1)));
                 }
 
                 sessionReady.remove(session.getId());

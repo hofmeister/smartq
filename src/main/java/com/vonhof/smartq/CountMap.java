@@ -10,6 +10,19 @@ public class CountMap<T>  {
     private final Map<T,Long> map = new HashMap<T, Long>();
     private long total;
 
+    public CountMap() {
+    }
+
+    public CountMap(Map<T, Integer> other) {
+        putAll(other);
+    }
+
+    public void putAll(Map<T, Integer> other) {
+        for(Map.Entry<T,Integer> entry : other.entrySet()) {
+            map.put(entry.getKey(), entry.getValue().longValue());
+            total += entry.getValue().longValue();
+        }
+    }
 
     private void ensureKey(T key) {
         if (!map.containsKey(key)) {
@@ -93,5 +106,9 @@ public class CountMap<T>  {
 
     public void remove(T referenceId) {
         map.remove(referenceId);
+    }
+
+    public Map<T, Long> toMap() {
+        return new HashMap<>(map);
     }
 }

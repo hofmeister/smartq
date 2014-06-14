@@ -122,12 +122,15 @@ public class PostgresTaskStore implements TaskStore {
             @Override
             public Object call() throws Exception {
                 client().update(String.format("DELETE FROM %s_ratelimits WHERE tag = ?", tableName), tag);
-                client().update(String.format("INSERT INTO %s_ratelimits (tag,ratelimit) VALUES (?,?)", tableName), tag, limit);
+                if (limit > 0) {
+                    client().update(String.format("INSERT INTO %s_ratelimits (tag,ratelimit) VALUES (?,?)", tableName), tag, limit);
+                }
                 return null;
             }
         });
     }
 
+    @Override
     public final CountMap<String> getAllRateLimit() {
         try {
             return client().queryForCountMap(String.format("SELECT tag,ratelimit from %s_ratelimits", tableName));
@@ -165,7 +168,9 @@ public class PostgresTaskStore implements TaskStore {
             @Override
             public Object call() throws Exception {
                 client().update(String.format("DELETE FROM %s_retrylimits WHERE tag = ?", tableName), tag);
-                client().update(String.format("INSERT INTO %s_retrylimits (tag,retrylimit) VALUES (?,?)", tableName), tag, limit);
+                if (limit > 0) {
+                    client().update(String.format("INSERT INTO %s_retrylimits (tag,retrylimit) VALUES (?,?)", tableName), tag, limit);
+                }
                 return null;
             }
         });

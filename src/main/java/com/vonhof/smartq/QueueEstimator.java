@@ -1,6 +1,7 @@
 package com.vonhof.smartq;
 
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 
 import java.util.*;
@@ -13,9 +14,10 @@ public class QueueEstimator {
     private long time = 0;
     private final SmartQ queue;
     private final TaskStore store;
-    private List<TaskInfo> runningTasks = new LinkedList<>();
-    private List<TaskInfo> onHold = new ArrayList<>(1000);
-    private List<TaskInfo> executionOrder = new LinkedList<>();
+    private final List<TaskInfo> runningTasks = new LinkedList<>();
+    private final List<TaskInfo> onHold = new ArrayList<>(1000);
+    private final List<TaskInfo> executionOrder = new LinkedList<>();
+    private final HashMap<String, Long> referenceMap = new HashMap<>();
     private FastCountMap runningTaskCount;
     private FastCountMap concurrencyCache;
     private FastCountMap estimates;
@@ -94,12 +96,18 @@ public class QueueEstimator {
     }
 
 
+
+    public Map<String, Long> getReferenceETA() {
+        return referenceMap;
+    }
+
     private long calculateETA(ParallelIterator<Task> queued, Task task) throws InterruptedException {
         try {
 
             runningTasks.clear();
             onHold.clear();
             executionOrder.clear();
+            referenceMap.clear();
             time = 0;
             concurrencyCache = new FastCountMap(store.getTags(), -1);
             runningTaskCount = new FastCountMap(store.getTags(), 0);
@@ -186,6 +194,7 @@ public class QueueEstimator {
                 time = markFirstDone();
             }
 
+            referenceMap.put("total",time);
             return time;
         } finally {
             queued.close();
@@ -242,7 +251,7 @@ public class QueueEstimator {
         }
 
         for(String tag: task.getTags()) {
-            runningTaskCount.increment(tag,1);
+            runningTaskCount.increment(tag, 1);
         }
 
         if (executionOrder.size() < 300) {
@@ -260,6 +269,9 @@ public class QueueEstimator {
         }
 
         task.setEnded(endTime);
+        if (!StringUtils.isEmpty(task.getReferenceId())) {
+            referenceMap.put(task.getReferenceId(), endTime);
+        }
 
         for(String tag: task.getTags()) {
             runningTaskCount.decrement(tag, 1);

@@ -8,6 +8,7 @@ public class TaskInfo {
     private final UUID id;
     private final String[] tags;
     private final String type;
+    private final String referenceId;
     private final boolean running;
     private long started;
     private long ended;
@@ -19,6 +20,7 @@ public class TaskInfo {
         this.running = t.isRunning();
         this.started = t.getStarted();
         this.ended = t.getEnded();
+        this.referenceId = t.getReferenceId();
     }
 
     public UUID getId() {
@@ -51,6 +53,10 @@ public class TaskInfo {
 
     public void setEnded(long ended) {
         this.ended = ended;
+    }
+
+    public String getReferenceId() {
+        return referenceId;
     }
 
     @Override

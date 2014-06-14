@@ -2,6 +2,7 @@ package com.vonhof.smartq;
 
 
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -75,4 +76,6 @@ public interface TaskStore {
     int getRateLimit(String tag);
 
     void setRateLimit(String tag, int limit);
+
+    CountMap<String> getAllRateLimit();
 }
