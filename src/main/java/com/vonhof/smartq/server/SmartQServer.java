@@ -178,6 +178,10 @@ public class SmartQServer {
             }
         }
 
+        public int getTaskCountForSession(IoSession session) {
+            return clientTask.get(session.getRemoteAddress()).size();
+        }
+
         public void unregisterTask(IoSession session, UUID id) {
             clientTask.get(session.getRemoteAddress()).remove(id);
             taskIds.remove(id);
@@ -307,6 +311,15 @@ public class SmartQServer {
                             log.info("Session already found: " + session.getId());
                         }
                     }
+
+                    synchronized (clientTask) {
+                        clientTask.notifyAll();
+                    }
+
+                    synchronized (taskEmitter) {
+                        taskEmitter.notifyAll();
+                    }
+
                     break;
                 case ACK:
 
@@ -447,42 +460,55 @@ public class SmartQServer {
         }
 
         private IoSession getNextSession() throws InterruptedException {
-            LinkedList<IoSession> managedSessions = new LinkedList<IoSession>(acceptor.getManagedSessions().values());
-            int sessionOffset = 0;
+
 
             while(true) {
+                LinkedList<IoSession> managedSessions = new LinkedList<>(acceptor.getManagedSessions().values());
+
                 while (managedSessions.size() < 1) {
                     synchronized (this) {
                         wait();
                     }
-                    managedSessions = new LinkedList<IoSession>(acceptor.getManagedSessions().values());
+                    managedSessions = new LinkedList<>(acceptor.getManagedSessions().values());
                 }
 
-                if (sessionOffset >= managedSessions.size()) {
-                    sessionOffset = 0;
+
+                int leastBusySessionCount = -1;
+                IoSession session = null;
+
+                for(IoSession managedSession :  managedSessions) {
+
+                    if (requestHandler.isBusy(managedSession) ||
+                            !requestHandler.isReady(managedSession)) {
+                        continue;
+                    }
+
+                    int taskCount = requestHandler.getTaskCountForSession(managedSession);
+                    if (taskCount < 1) {
+                        session = managedSession;
+                        break;
+                    }
+
+                    if (leastBusySessionCount == -1 ||
+                            leastBusySessionCount >  taskCount) {
+                        session = managedSession;
+                        leastBusySessionCount = taskCount;
+                    }
+                }
+
+                if (session == null) {
                     synchronized (this) {
                         if (log.isInfoEnabled()) {
-                            log.info("Waiting for new sessions to become available");
+                            log.info("Waiting for sessions to become available");
                         }
-                        wait();
+                        wait(15000);
                     }
-
-                    if (log.isInfoEnabled()) {
-                        log.info("Got new sessions - refreshing session list");
-                    }
-                    managedSessions = new LinkedList<IoSession>(acceptor.getManagedSessions().values());
                     continue;
                 }
 
-                IoSession session = managedSessions.get(sessionOffset);
-                sessionOffset++;
-
-                if (session == null || requestHandler.isBusy(session)) {
-                    continue;
-                }
-
-                if (requestHandler.isReady(session))
+                if (requestHandler.isReady(session)) {
                     return session;
+                }
             }
         }
 

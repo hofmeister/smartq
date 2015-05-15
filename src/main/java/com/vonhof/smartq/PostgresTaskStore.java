@@ -44,6 +44,17 @@ public class PostgresTaskStore implements TaskStore {
                 throw new RuntimeException(e);
             }
         }
+
+        @Override
+        public void remove() {
+            super.remove();
+            try {
+                this.get().close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+
     };
 
     private final Class<Task> taskClass;
