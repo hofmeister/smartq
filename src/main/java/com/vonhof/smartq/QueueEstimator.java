@@ -9,7 +9,16 @@ import java.util.concurrent.*;
 
 public class QueueEstimator {
     private final static Logger log = Logger.getLogger(QueueEstimator.class);
-    private final static ExecutorService pool = Executors.newCachedThreadPool();
+    private final static ExecutorService pool;
+
+    static {
+        pool = Executors.newFixedThreadPool(20, new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                return new Thread(r, "smartq-estimator");
+            }
+        });
+    }
 
     private long time = 0;
     private final SmartQ queue;

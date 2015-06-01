@@ -44,7 +44,7 @@ public class SmartQServer {
 
     private final RequestHandler requestHandler = new RequestHandler();
     private TaskEmitter taskEmitter;
-    private final Timer timer = new Timer();
+    private final Timer timer = new Timer("smartq-timer");
     private ProtocolCodecFactory protocolCodecFactory = new JacksonCodecFactory();
 
 

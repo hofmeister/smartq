@@ -20,6 +20,7 @@ import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 public class SmartQClient {
 
@@ -59,16 +60,22 @@ public class SmartQClient {
 
     /**
      * Creates a publish / subscribe queue client.
-     * @param hostAddress host to connect to
+     *
+     * @param hostAddress     host to connect to
      * @param responseHandler the handler will receive all tasks
-     * @param threads Determines how many concurrent tasks can be handled. Defaults to available processors
+     * @param threads         Determines how many concurrent tasks can be handled. Defaults to available processors
      */
     public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler responseHandler, int threads) {
         id = UUID.randomUUID();
         this.hostAddress = hostAddress;
         this.responseHandler = responseHandler;
         if (threads > 0) {
-            this.executor = Executors.newFixedThreadPool( threads );
+            this.executor = Executors.newFixedThreadPool(threads, new ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable r) {
+                    return new Thread(r, "smartq-client-executor");
+                }
+            });
         } else {
             this.executor = null;
         }
@@ -85,7 +92,8 @@ public class SmartQClient {
 
     /**
      * Creates a publish / subscribe queue client.
-     * @param hostAddress host to connect to
+     *
+     * @param hostAddress     host to connect to
      * @param responseHandler the handler will receive all tasks
      */
     public SmartQClient(InetSocketAddress hostAddress, SmartQClientMessageHandler responseHandler) {
@@ -94,6 +102,7 @@ public class SmartQClient {
 
     /**
      * Creates a publish-only client (will not receive messages)
+     *
      * @param hostAddress host to connect to
      */
     public SmartQClient(InetSocketAddress hostAddress) {
@@ -143,7 +152,7 @@ public class SmartQClient {
             if (!reconnecting) {
                 subscribe();
             }
-            timer.scheduleAtFixedRate(new HostPinger(),5000,1000);
+            timer.scheduleAtFixedRate(new HostPinger(), 5000, 1000);
         } catch (RuntimeIoException e) {
             if (connector != null) {
                 connector.dispose();
@@ -214,9 +223,9 @@ public class SmartQClient {
                     return;
                 }
 
-                log.warn("Was unexpectedly disconnected from  " + hostAddress+". Will try to reconnect. " + SmartQClient.this);
+                log.warn("Was unexpectedly disconnected from  " + hostAddress + ". Will try to reconnect. " + SmartQClient.this);
 
-                while(true) {
+                while (true) {
                     try {
                         connect();
                         reconnecting = false;
@@ -252,6 +261,7 @@ public class SmartQClient {
     /**
      * Send SUBSCRIBE command to server. Only sends this if a response handler is present (SUBSCRIBE indicates we are ready for
      * messages).
+     *
      * @throws InterruptedException
      */
     private synchronized void subscribe() throws InterruptedException {
@@ -282,13 +292,13 @@ public class SmartQClient {
             }
 
             queuedMessages.clear();
-            for(Command cmd: cmds) {
+            for (Command cmd : cmds) {
                 switch (cmd.getType()) {
                     case ACK:
-                        acknowledge((UUID)cmd.getArgs()[0]);
+                        acknowledge((UUID) cmd.getArgs()[0]);
                         break;
                     case NACK:
-                        cancel((UUID)cmd.getArgs()[0],(Boolean)cmd.getArgs()[0]);
+                        cancel((UUID) cmd.getArgs()[0], (Boolean) cmd.getArgs()[0]);
                         break;
                     case SUBSCRIBE:
                         subscribe();
@@ -317,7 +327,7 @@ public class SmartQClient {
             Set<UUID> uuids = referenceTasks.get(referenceId);
             if (uuids != null) {
                 activeTaskIds.removeAll(uuids);
-                for(UUID taskId : uuids) {
+                for (UUID taskId : uuids) {
                     taskReference.remove(taskId);
                 }
                 referenceTasks.remove(referenceId);
@@ -389,11 +399,11 @@ public class SmartQClient {
     }
 
 
-
     private class ClientSessionHandler implements IoHandler {
 
         @Override
-        public void sessionCreated(IoSession session) throws Exception {}
+        public void sessionCreated(IoSession session) throws Exception {
+        }
 
         @Override
         public void sessionOpened(IoSession session) throws Exception {
@@ -401,7 +411,9 @@ public class SmartQClient {
         }
 
         @Override
-        public void sessionIdle(IoSession session, IdleStatus status) throws Exception {}
+        public void sessionIdle(IoSession session, IdleStatus status) throws Exception {
+        }
+
         @Override
         public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
             if (cause instanceof IOException) {
@@ -410,8 +422,10 @@ public class SmartQClient {
                 log.error("Got exception while processing request on " + SmartQClient.this, cause);
             }
         }
+
         @Override
-        public void messageSent(IoSession session, Object message) throws Exception {}
+        public void messageSent(IoSession session, Object message) throws Exception {
+        }
 
         @Override
         public void sessionClosed(IoSession session) throws Exception {
@@ -458,7 +472,8 @@ public class SmartQClient {
 
                             try {
                                 failed(task.getId());
-                            } catch (InterruptedException e) {}
+                            } catch (InterruptedException e) {
+                            }
                         }
                     }
                 });
@@ -466,7 +481,7 @@ public class SmartQClient {
             }
 
             if (message instanceof Error) {
-                throw new Exception(((Error)message).getMessage());
+                throw new Exception(((Error) message).getMessage());
             }
         }
     }
