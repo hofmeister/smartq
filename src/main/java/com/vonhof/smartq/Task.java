@@ -216,7 +216,8 @@ public class Task<T> {
     public static enum State {
         PENDING,
         RUNNING,
-        ERROR, DONE
+        ERROR,
+        DONE
     }
 
     @Override

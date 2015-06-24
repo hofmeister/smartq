@@ -30,7 +30,7 @@ public class QueueEstimator {
     private FastCountMap runningTaskCount;
     private FastCountMap concurrencyCache;
     private FastCountMap estimates;
-    private Speed speed = Speed.EXACT;
+    private Speed speed = Speed.AUTO;
 
     public QueueEstimator(SmartQ queue) {
         this.queue = queue;

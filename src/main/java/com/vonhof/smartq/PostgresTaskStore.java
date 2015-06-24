@@ -206,7 +206,7 @@ public class PostgresTaskStore implements TaskStore {
             withinTransaction(new Callable() {
                 @Override
                 public Object call() throws Exception {
-                    CopyManager taskCopy = new CopyManager((BaseConnection) client().connection);
+                    CopyManager taskCopy = new CopyManager((BaseConnection) client().conn());
                     CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type, referenceid, created) FROM STDIN WITH DELIMITER AS '|' CSV ESCAPE AS '\\' ENCODING 'UTF-8'", tableName));
 
                     for (Task task : tasks) {
@@ -236,7 +236,7 @@ public class PostgresTaskStore implements TaskStore {
 
                     taskCopyIn.endCopy();
 
-                    CopyManager tagCopy = new CopyManager((BaseConnection) client().connection);
+                    CopyManager tagCopy = new CopyManager((BaseConnection) client().conn());
                     CopyIn tagCopyIn = tagCopy.copyIn(String.format("COPY \"%s_tags\"(id, tag) FROM STDIN WITH DELIMITER '|'", tableName));
 
                     for (Task task : tasks) {
@@ -432,12 +432,12 @@ public class PostgresTaskStore implements TaskStore {
 
     public void withinTransaction(Callable callable) {
         try {
-            client().connection.setAutoCommit(false);
+            client().conn().setAutoCommit(false);
             callable.call();
-            client().connection.commit();
+            client().conn().commit();
         } catch (Exception e) {
             try {
-                client().connection.rollback();
+                client().conn().rollback();
                 if (e instanceof BatchUpdateException) {
                     e = ((BatchUpdateException) e).getNextException();
                 }
@@ -447,7 +447,7 @@ public class PostgresTaskStore implements TaskStore {
             }
         } finally {
             try {
-                client().connection.setAutoCommit(true);
+                client().conn().setAutoCommit(true);
             } catch (SQLException e) {
                 log.error("Failed to reactivate auto commit", e);
             }
@@ -461,7 +461,7 @@ public class PostgresTaskStore implements TaskStore {
         boolean transactionDone = true;
         try {
             if (!client().isolated) {
-                client().connection.setAutoCommit(false);
+                client().conn().setAutoCommit(false);
                 client().lockTable();
                 client().isolated = isolationStartedInThisCall = true;
                 transactionDone = false;
@@ -469,7 +469,7 @@ public class PostgresTaskStore implements TaskStore {
 
             U result = callable.call();
             if (isolationStartedInThisCall) {
-                client().connection.commit();
+                client().conn().commit();
                 transactionDone = true;
                 log.trace("Committed transaction and unlocked table");
             }
@@ -477,7 +477,7 @@ public class PostgresTaskStore implements TaskStore {
         } catch (Exception e) {
             if (isolationStartedInThisCall) {
                 try {
-                    client().connection.rollback();
+                    client().conn().rollback();
                     transactionDone = true;
                     log.warn("Rolled back transaction", e);
                 } catch (SQLException e1) {
@@ -491,14 +491,14 @@ public class PostgresTaskStore implements TaskStore {
                 if (!transactionDone) {
                     log.error("A transaction was never committed! Doing so now.");
                     try {
-                        client().connection.commit();
+                        client().conn().commit();
                     } catch (SQLException e) {
                         log.error("Failed to recover transaction commit.", e);
                     }
                 }
 
                 try {
-                    client().connection.setAutoCommit(true);
+                    client().conn().setAutoCommit(true);
                 } catch (SQLException e) {
                     log.error("Failed to reactivate auto commit", e);
                 }
@@ -594,31 +594,46 @@ public class PostgresTaskStore implements TaskStore {
     }
 
     private class PostgresClient {
-        private final Connection connection;
-        private final PGConnection pgconn;
+        private Connection connection;
         private volatile boolean isolated = false;
-        private Listener listener = new Listener();
+        private Listener listener;
 
         private PostgresClient() throws SQLException {
-            connection = DriverManager.getConnection(url, username, password);
-            connection.setAutoCommit(true);
-            pgconn = (PGConnection) connection;
+
+        }
+
+
+        private synchronized Connection conn() throws SQLException {
+            if (connection == null) {
+                connection = DriverManager.getConnection(url, username, password);
+                connection.setAutoCommit(true);
+            }
+
+            return connection;
+        }
+
+
+        private synchronized PGConnection pgConn() throws SQLException {
+            return (PGConnection) conn();
         }
 
         public void startListening() {
-            listener.start();
-            try {
-                pgListen();
-            } catch (SQLException e) {
-                log.error("Failed to listen on postgres", e);
+            if (listener != null) {
+                throw new RuntimeException("Listener already listening");
             }
+
+            listener = new Listener();
+            listener.start();
         }
 
         public void close() throws SQLException, InterruptedException {
             log.trace("Closing client connection");
-            connection.close();
+            if (connection != null) {
+                connection.close();
+            }
 
-            if (listener.isAlive()) {
+            if (listener != null &&
+                    listener.isAlive()) {
                 listener.interrupt();
                 listener.join();
             }
@@ -715,7 +730,7 @@ public class PostgresTaskStore implements TaskStore {
 
         private PreparedStatement prepared(String sql) {
             try {
-                return connection.prepareStatement(sql);
+                return conn().prepareStatement(sql);
             } catch (SQLException e) {
                 throw new RuntimeException(sql, e);
             }
@@ -723,7 +738,7 @@ public class PostgresTaskStore implements TaskStore {
 
         private PreparedStatement stmt(String sql, Object... args) {
             try {
-                PreparedStatement stmt = connection.prepareStatement(sql);
+                PreparedStatement stmt = conn().prepareStatement(sql);
                 int i = 1;
                 for (Object arg : args) {
                     stmt.setObject(i, arg);
@@ -898,7 +913,7 @@ public class PostgresTaskStore implements TaskStore {
 
         public boolean hasNotifications() throws SQLException {
             execute("SELECT 1"); //Trigger notification push
-            PGNotification[] notifications = pgconn.getNotifications();
+            PGNotification[] notifications = pgConn().getNotifications();
             return notifications != null && notifications.length > 0;
         }
 
@@ -1140,16 +1155,17 @@ public class PostgresTaskStore implements TaskStore {
         @Override
         public void run() {
 
-            final PostgresClient client;
+            PostgresClient client = null;
 
             try {
-                client = new PostgresClient();
-                client.pgListen();
-            } catch (SQLException e) {
-                throw new RuntimeException(e);
-            }
 
-            try {
+                try {
+                    client = new PostgresClient();
+                    client.pgListen();
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+
                 while (!interrupted() && !closed) {
                     try {
                         if (client.hasNotifications()) {
