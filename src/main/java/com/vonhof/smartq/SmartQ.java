@@ -9,13 +9,9 @@ import java.util.concurrent.Callable;
 public class SmartQ<U>  {
 
     private static final Logger log = Logger.getLogger(SmartQ.class);
-
-
-
     private final TaskStore store;
     private volatile int subscribers = 0;
     private volatile int concurrency = -1;
-
 
     private final List<QueueListener> listeners = new ArrayList<QueueListener>();
     private boolean interrupted = false;
@@ -23,6 +19,10 @@ public class SmartQ<U>  {
 
     public SmartQ(final TaskStore store) {
         this.store = store;
+    }
+
+    protected SmartQ() {
+        store = null;
     }
 
     public int getSubscribers() {

@@ -55,6 +55,11 @@ public class SmartQServer {
 
     }
 
+    protected SmartQServer() {
+        address = null;
+        queue = null;
+    }
+
     public void setProtocolCodecFactory(ProtocolCodecFactory protocolCodecFactory) {
         this.protocolCodecFactory = protocolCodecFactory;
     }
