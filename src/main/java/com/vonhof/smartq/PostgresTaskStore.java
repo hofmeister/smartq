@@ -124,6 +124,7 @@ public class PostgresTaskStore implements TaskStore {
     /**
      * Limit the throughput of a specific tag ( e.g. how many tasks of the given tag that may be processed
      * concurrently )
+     *
      * @param tag
      * @param limit
      */
@@ -152,6 +153,7 @@ public class PostgresTaskStore implements TaskStore {
 
     /**
      * Gets the max allowed concurrent tasks for a given tag. Returns -1 if no limit is specified.
+     *
      * @param tag
      * @return
      */
@@ -190,11 +192,11 @@ public class PostgresTaskStore implements TaskStore {
     @Override
     public final int getMaxRetries(Set<String> tags) {
         try {
-            long out = client().queryForLong(String.format("SELECT max(retrylimit) from %s_retrylimits where tag IN ('%s')", tableName, StringUtils.join(tags,"','")));
+            long out = client().queryForLong(String.format("SELECT max(retrylimit) from %s_retrylimits where tag IN ('%s')", tableName, StringUtils.join(tags, "','")));
             if (out < 1) {
                 return -1;
             }
-            return (int)out;
+            return (int) out;
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -202,62 +204,55 @@ public class PostgresTaskStore implements TaskStore {
 
     @Override
     public void queue(final Task... tasks) {
+        Connection connection = null;
+
         try {
-            withinTransaction(new Callable() {
-                @Override
-                public Object call() throws Exception {
-                    CopyManager taskCopy = new CopyManager((BaseConnection) client().conn());
-                    CopyIn taskCopyIn = taskCopy.copyIn(String.format("COPY \"%s\"(id, content, state, priority, type, referenceid, created) FROM STDIN WITH DELIMITER AS '|' CSV ESCAPE AS '\\' ENCODING 'UTF-8'", tableName));
+            connection = client().conn();
+            connection.setAutoCommit(false);
 
-                    for (Task task : tasks) {
+            PreparedStatement insertTasks = connection.prepareStatement(
+                    String.format(
+                            "INSERT INTO \"%s\" (id, content, state, priority, type, referenceid, created) VALUES (?,?,?,?,?,?,?)",
+                            tableName
+                    ));
 
-                        task = new Task(task);//Copy
-                        task.setState(State.PENDING);
+            for (int i = 0; i < tasks.length; i++) {
+                Task task = new Task(tasks[i]);
+                task.setState(State.PENDING);
 
-                        StringBuilder taskRowBuilder = new StringBuilder();
-                        taskRowBuilder.append(task.getId());
-                        taskRowBuilder.append("|\"");
-                        taskRowBuilder.append(new String(serialize(task),"UTF-8"));
-                        taskRowBuilder.append("\"|");
-                        taskRowBuilder.append(STATE_QUEUED);
-                        taskRowBuilder.append("|");
-                        taskRowBuilder.append(task.getPriority());
-                        taskRowBuilder.append("|");
-                        taskRowBuilder.append(task.getType());
-                        taskRowBuilder.append("|");
-                        taskRowBuilder.append(task.getReferenceId());
-                        taskRowBuilder.append("|");
-                        taskRowBuilder.append(task.getCreated());
-                        taskRowBuilder.append("\n");
+                insertTasks.setObject(1, task.getId());
+                insertTasks.setBytes(2, serialize(task));
+                insertTasks.setInt(3, STATE_QUEUED);
+                insertTasks.setInt(4, task.getPriority());
+                insertTasks.setString(5, task.getType());
+                insertTasks.setString(6, task.getReferenceId());
+                insertTasks.setLong(7, task.getCreated());
+                insertTasks.addBatch();
+            }
 
-                        byte[] taskRow = taskRowBuilder.toString().getBytes(Charset.forName("UTF-8"));
-                        taskCopyIn.writeToCopy(taskRow, 0, taskRow.length);
-                    }
+            insertTasks.executeBatch();
 
-                    taskCopyIn.endCopy();
+            PreparedStatement insertTags = connection.prepareStatement(
+                    String.format(
+                            "INSERT INTO \"%s_tags\" (id, tag) VALUES (?,?)",
+                            tableName
+                    ));
 
-                    CopyManager tagCopy = new CopyManager((BaseConnection) client().conn());
-                    CopyIn tagCopyIn = tagCopy.copyIn(String.format("COPY \"%s_tags\"(id, tag) FROM STDIN WITH DELIMITER '|'", tableName));
 
-                    for (Task task : tasks) {
-                        for (String tag : (Set<String>) task.getTags().keySet()) {
-                            StringBuilder tagRowBuilder = new StringBuilder();
-                            tagRowBuilder.append(task.getId());
-                            tagRowBuilder.append("|");
-                            tagRowBuilder.append(tag);
-                            tagRowBuilder.append("\n");
-                            byte[] tagRow = tagRowBuilder.toString().getBytes(Charset.forName("UTF-8"));
+            int i = 0;
+            for (Task task : tasks) {
+                for (String tag : (Set<String>) task.getTags().keySet()) {
+                    insertTags.setObject(1, task.getId());
+                    insertTags.setString(2, tag);
+                    insertTags.addBatch();
 
-                            tagCopyIn.writeToCopy(tagRow, 0, tagRow.length);
-                        }
-                    }
-                    tagCopyIn.endCopy();
-
-                    return null;
                 }
-            });
+            }
 
+            insertTags.executeBatch();
 
+            connection.commit();
+            connection.setAutoCommit(true);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -562,9 +557,9 @@ public class PostgresTaskStore implements TaskStore {
     public Task getFirstTaskWithReference(String referenceId) {
         try {
             return client().queryOne(String.format("SELECT task.id, task.content " +
-                    "FROM \"%1$s\" task " +
-                    "WHERE task.referenceid = ? " +
-                    "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName),
+                            "FROM \"%1$s\" task " +
+                            "WHERE task.referenceid = ? " +
+                            "ORDER BY task.priority DESC, task.created ASC, task.order ASC ", tableName),
                     referenceId);
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -575,9 +570,9 @@ public class PostgresTaskStore implements TaskStore {
     public Task getLastTaskWithReference(String referenceId) {
         try {
             return client().queryOne(String.format("SELECT task.id, task.content " +
-                    "FROM \"%1$s\" task " +
-                    "WHERE task.referenceid = ? " +
-                    "ORDER BY task.priority ASC, task.created DESC, task.order DESC", tableName),
+                            "FROM \"%1$s\" task " +
+                            "WHERE task.referenceid = ? " +
+                            "ORDER BY task.priority ASC, task.created DESC, task.order DESC", tableName),
                     referenceId);
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -605,11 +600,26 @@ public class PostgresTaskStore implements TaskStore {
 
         private synchronized Connection conn() throws SQLException {
             if (connection == null) {
-                connection = DriverManager.getConnection(url, username, password);
+                connection = newConnection();
                 connection.setAutoCommit(true);
             }
 
             return connection;
+        }
+
+        private Connection newConnection() throws SQLException {
+            java.util.Properties info = new java.util.Properties();
+            if (username != null) {
+                info.put("user" ,username);
+            }
+
+            if (password != null) {
+                info.put("password", password);
+            }
+
+            info.put("receiveBufferSize", "1");
+            info.put("sendBufferSize", "1");
+            return DriverManager.getConnection(url, info);
         }
 
 
@@ -856,7 +866,7 @@ public class PostgresTaskStore implements TaskStore {
             try {
                 if (type != null && !type.isEmpty()) {
                     return client().queryForLong(String.format("SELECT count(*)  FROM \"%1$s\" task, \"%1$s_tags\" tag " +
-                            "WHERE task.state = ? AND task.type = ? ", tableName),
+                                    "WHERE task.state = ? AND task.type = ? ", tableName),
                             state, type);
                 } else {
                     return client().queryForLong(String.format("SELECT count(*) from \"%s\" WHERE state = ?", tableName), state);

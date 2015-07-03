@@ -50,6 +50,7 @@ public class SmartQ<U>  {
     }
 
     private void triggerAcquire(Task task) {
+
         for(QueueListener listener : listeners) {
             listener.onAcquire(task);
         }
@@ -274,8 +275,10 @@ public class SmartQ<U>  {
 
         getStore().signalChange();
 
-        for(Task task : tasks) {
-            triggerSubmit(task);
+        if (!listeners.isEmpty()) {
+            for(Task task : tasks) {
+                triggerSubmit(task);
+            }
         }
 
         return true;
@@ -393,7 +396,7 @@ public class SmartQ<U>  {
                 }
 
                 try {
-                    selectedTask = getStore().isolatedChange(new Callable<Task>() {
+                    selectedTask = new Callable<Task>() {
                         @Override
                         public Task call() throws Exception {
                             long timeStart = System.currentTimeMillis();
@@ -436,7 +439,7 @@ public class SmartQ<U>  {
 
                             return taskLookup;
                         }
-                    });
+                    }.call();
 
                 } catch (Exception e) {
                     log.error("Failed while trying to get selected task", e);
@@ -515,7 +518,7 @@ public class SmartQ<U>  {
     }
 
     public void requeueAll() throws InterruptedException {
-        getStore().isolatedChange(new Callable<Object>() {
+        new Callable<Object>() {
             @Override
             public Object call() throws InterruptedException {
                 List<Task> tasks = new LinkedList<Task>();
@@ -536,7 +539,7 @@ public class SmartQ<U>  {
                 }
                 return null;
             }
-        });
+        }.call();
 
     }
 
@@ -553,8 +556,8 @@ public class SmartQ<U>  {
 
     }
 
-    public Task acquireTask(final UUID taskId) throws InterruptedException {
-        return getStore().isolatedChange(new Callable<Task>() {
+    public Task acquireTask(final UUID taskId) throws Exception {
+        return new Callable<Task>() {
             @Override
             public Task call() throws Exception {
                 Task t = getStore().get(taskId);
@@ -565,7 +568,7 @@ public class SmartQ<U>  {
                 acquireTask(t);
                 return t;
             }
-        });
+        }.call();
 
     }
 
