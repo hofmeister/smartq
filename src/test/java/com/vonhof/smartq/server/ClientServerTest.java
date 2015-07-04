@@ -569,6 +569,14 @@ public class ClientServerTest {
         assertEquals(3, server.getSubscriberCount());
         assertEquals(3, server.getClientCount());
 
+        assertEquals(1, server.getClientCountForGroup("group1"));
+        assertEquals(1, server.getClientCountForGroup("group2"));
+        assertEquals(1, server.getClientCountForGroup("default"));
+
+        assertEquals(1, server.getSubscriberCountForGroup("group1"));
+        assertEquals(1, server.getSubscriberCountForGroup("group2"));
+        assertEquals(1, server.getSubscriberCountForGroup("default"));
+
         if (msgHandler.done < 4) {
             msgHandler.waitForTasks();
         }
@@ -591,6 +599,20 @@ public class ClientServerTest {
         group2Subscriber.close();
         defaultSubscriber.close();
         server.close();
+
+        Thread.sleep(100);
+
+
+        assertEquals(0, server.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
+
+        assertEquals(0, server.getClientCountForGroup("group1"));
+        assertEquals(0, server.getClientCountForGroup("group2"));
+        assertEquals(0, server.getClientCountForGroup("default"));
+
+        assertEquals(0, server.getSubscriberCountForGroup("group1"));
+        assertEquals(0, server.getSubscriberCountForGroup("group2"));
+        assertEquals(0, server.getSubscriberCountForGroup("default"));
     }
 
     @Test

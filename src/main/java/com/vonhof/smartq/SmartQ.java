@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.concurrent.Callable;
 
 public class SmartQ<U>  {
+    public static final String GROUP_DEFAULT = "default";
 
     private static final Logger log = Logger.getLogger(SmartQ.class);
     private final TaskStore store;

@@ -1,6 +1,7 @@
 package com.vonhof.smartq.server;
 
 
+import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.mina.JacksonCodecFactory;
 import com.vonhof.smartq.server.Command.Type;
@@ -46,7 +47,7 @@ public class SmartQClient {
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
     private final Executor executor;
     private final int threads;
-    private String group = Task.GROUP_DEFAULT;
+    private String group = SmartQ.GROUP_DEFAULT;
     private Timer timer;
 
     private final UUID id;

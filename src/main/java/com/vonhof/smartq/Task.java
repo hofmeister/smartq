@@ -1,5 +1,6 @@
 package com.vonhof.smartq;
 
+import org.apache.commons.lang.StringUtils;
 import org.codehaus.jackson.annotate.JsonIgnore;
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 
@@ -7,8 +8,6 @@ import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Task<T> {
-    public static final String GROUP_DEFAULT = "default";
-
     private UUID id;
     private State state = State.PENDING;
     private long created = 0;
@@ -22,7 +21,7 @@ public class Task<T> {
     private String referenceId;
     private Map<String,Integer> tags = new HashMap<String, Integer>();
     private String type;
-    private String group = GROUP_DEFAULT;
+    private String group = SmartQ.GROUP_DEFAULT;
 
     public Task() {
         this("none");
@@ -86,6 +85,9 @@ public class Task<T> {
     }
 
     public String getGroup() {
+        if (StringUtils.isEmpty(group)) {
+            group = SmartQ.GROUP_DEFAULT;
+        }
         return group;
     }
 

@@ -2,6 +2,7 @@ package com.vonhof.smartq.server;
 
 
 import com.vonhof.smartq.AcquireInterruptedException;
+import com.vonhof.smartq.CountMap;
 import com.vonhof.smartq.SmartQ;
 import com.vonhof.smartq.Task;
 import com.vonhof.smartq.mina.JacksonCodecFactory;
@@ -41,6 +42,8 @@ public class SmartQServer {
     private NioSocketAcceptor acceptor;
     private final AtomicInteger subscriberCount = new AtomicInteger(0);
     private final AtomicInteger clientCount = new AtomicInteger(0);
+    private final CountMap<String> clientCountForGroup = new CountMap<>();
+    private final CountMap<String> subscriberCountForGroup = new CountMap<>();
 
     private final RequestHandler requestHandler = new RequestHandler();
     private TaskEmitter taskEmitter;
@@ -70,6 +73,14 @@ public class SmartQServer {
 
     public int getClientCount() {
         return clientCount.get();
+    }
+
+    public long getClientCountForGroup(String group) {
+        return clientCountForGroup.get(group);
+    }
+
+    public long getSubscriberCountForGroup(String group) {
+        return subscriberCountForGroup.get(group);
     }
 
     public InetSocketAddress getAddress() {
@@ -137,6 +148,8 @@ public class SmartQServer {
         timer.purge();
 
     }
+
+
 
 
     private class RequestHandler extends IoHandlerAdapter {
@@ -303,15 +316,20 @@ public class SmartQServer {
                             clientTaskLimit.put(session.getRemoteAddress(), (Integer) args[0]);
                         }
 
-                        session.setAttribute("GROUP", Task.GROUP_DEFAULT);
+                        session.setAttribute("GROUP", SmartQ.GROUP_DEFAULT);
                         if (args.length > 1 && args[1] instanceof String) {
                             session.setAttribute("GROUP", args[1]);
                         }
 
+                        clientCountForGroup.increment(session.getAttribute("GROUP").toString(), 1);
+
                         sessionReady.add(session.getId());
                         taskEmitter.checkForSessions();
 
-                        queue.setSubscribers(subscriberCount.addAndGet(clientTaskLimit.get(session.getRemoteAddress())));
+                        int taskLimit = clientTaskLimit.get(session.getRemoteAddress());
+                        queue.setSubscribers(subscriberCount.addAndGet(taskLimit));
+
+                        subscriberCountForGroup.increment(session.getAttribute("GROUP").toString(), taskLimit);
 
                         if (log.isInfoEnabled()) {
                             log.info(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: %s [Group: %s]",
@@ -405,10 +423,13 @@ public class SmartQServer {
 
             synchronized (clientTask) {
                 clientCount.decrementAndGet();
-                Integer integer = clientTaskLimit.get(session.getRemoteAddress());
+                Integer taskLimit = clientTaskLimit.get(session.getRemoteAddress());
 
                 if (sessionReady.contains(session.getId())) {
-                    queue.setSubscribers(subscriberCount.addAndGet(integer == null ? -1 :  (integer*-1)));
+                    queue.setSubscribers(subscriberCount.addAndGet(taskLimit == null ? -1 :  (taskLimit*-1)));
+
+                    clientCountForGroup.decrement(session.getAttribute("GROUP").toString(), 1);
+                    subscriberCountForGroup.decrement(session.getAttribute("GROUP").toString(), taskLimit);
                 }
 
                 sessionReady.remove(session.getId());
@@ -524,8 +545,8 @@ public class SmartQServer {
                 return session;
             }
 
-            if (!group.equals(Task.GROUP_DEFAULT)) {
-                return getNextSession(Task.GROUP_DEFAULT);
+            if (!group.equals(SmartQ.GROUP_DEFAULT)) {
+                return getNextSession(SmartQ.GROUP_DEFAULT);
             }
 
             return null;
