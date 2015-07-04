@@ -370,7 +370,7 @@ public class MemoryTaskStore implements TaskStore {
 
     @Override
     public long runningCountForGroup(String type) {
-        return runningTypeCount.get(type);
+        return runningGroupCount.get(type);
     }
 
     @Override
