@@ -13,18 +13,6 @@ public class Command {
     public Command(Type type, Object ... args) {
         this.type = type;
         this.args = args;
-
-        if (type.getArgTypes().length != args.length) {
-            throw new IllegalArgumentException(String.format("Command %s requires %s arguments: %s", type, type.getArgTypes().length, type.getArgTypes()));
-        }
-
-        for(int i = 0; i < type.getArgTypes().length; i++) {
-            Class argType = type.getArgTypes()[i];
-            Object arg = args[i];
-            if (!argType.isInstance(arg)) {
-                throw new IllegalArgumentException(String.format("Command %s requires %s arguments: %s. Got %s",type,type.getArgTypes().length,type.getArgTypes(),args));
-            }
-        }
     }
 
     public Type getType() {
