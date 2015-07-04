@@ -44,7 +44,7 @@ public class Command {
     }
 
     public static enum Type {
-        SUBSCRIBE(Integer.class),
+        SUBSCRIBE(Integer.class, String.class),
         ACK(UUID.class),
         NACK(UUID.class, Boolean.class),
         RECOVER(UUIDList.class),

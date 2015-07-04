@@ -9,9 +9,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.postgresql.PGConnection;
 import org.postgresql.PGNotification;
-import org.postgresql.copy.CopyIn;
-import org.postgresql.copy.CopyManager;
-import org.postgresql.core.BaseConnection;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -212,7 +209,7 @@ public class PostgresTaskStore implements TaskStore {
 
             PreparedStatement insertTasks = connection.prepareStatement(
                     String.format(
-                            "INSERT INTO \"%s\" (id, content, state, priority, type, referenceid, created) VALUES (?,?,?,?,?,?,?)",
+                            "INSERT INTO \"%s\" (id, content, state, priority, type, \"group\", referenceid, created) VALUES (?,?,?,?,?,?,?,?)",
                             tableName
                     ));
 
@@ -225,8 +222,9 @@ public class PostgresTaskStore implements TaskStore {
                 insertTasks.setInt(3, STATE_QUEUED);
                 insertTasks.setInt(4, task.getPriority());
                 insertTasks.setString(5, task.getType());
-                insertTasks.setString(6, task.getReferenceId());
-                insertTasks.setLong(7, task.getCreated());
+                insertTasks.setString(6, task.getGroup());
+                insertTasks.setString(7, task.getReferenceId());
+                insertTasks.setLong(8, task.getCreated());
                 insertTasks.addBatch();
             }
 
@@ -253,6 +251,8 @@ public class PostgresTaskStore implements TaskStore {
 
             connection.commit();
             connection.setAutoCommit(true);
+        } catch (SQLException e) {
+            throw new RuntimeException(e.getNextException() == null ? e : e.getNextException());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -413,6 +413,16 @@ public class PostgresTaskStore implements TaskStore {
     @Override
     public long runningCount(final String type) {
         return client().count(STATE_RUNNING, type);
+    }
+
+    @Override
+    public long queueSizeForGroup(String group) {
+        return client().countGroup(STATE_QUEUED, group);
+    }
+
+    @Override
+    public long runningCountForGroup(String group) {
+        return client().countGroup(STATE_RUNNING, group);
     }
 
     @Override
@@ -857,17 +867,17 @@ public class PostgresTaskStore implements TaskStore {
             }
         }
 
-        public long countType(int state) {
-            return countType(state, null);
+        public long countGroup(int state) {
+            return countGroup(state, null);
         }
 
-        public long countType(int state, String type) {
+        public long countGroup(int state, String group) {
 
             try {
-                if (type != null && !type.isEmpty()) {
-                    return client().queryForLong(String.format("SELECT count(*)  FROM \"%1$s\" task, \"%1$s_tags\" tag " +
-                                    "WHERE task.state = ? AND task.type = ? ", tableName),
-                            state, type);
+                if (group != null && !group.isEmpty()) {
+                    return client().queryForLong(String.format("SELECT count(*) FROM \"%1$s\" task " +
+                                    "WHERE task.state = ? AND task.group = ? ", tableName),
+                            state, group);
                 } else {
                     return client().queryForLong(String.format("SELECT count(*) from \"%s\" WHERE state = ?", tableName), state);
                 }

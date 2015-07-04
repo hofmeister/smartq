@@ -46,6 +46,7 @@ public class SmartQClient {
     private final List<Command> queuedMessages = Collections.synchronizedList(new LinkedList<Command>());
     private final Executor executor;
     private final int threads;
+    private String group = Task.GROUP_DEFAULT;
     private Timer timer;
 
     private final UUID id;
@@ -123,6 +124,14 @@ public class SmartQClient {
 
     public void setConnectionTimeout(int connectionTimeout) {
         this.connectionTimeout = connectionTimeout;
+    }
+
+    public void setGroup(String group) {
+        this.group = group;
+    }
+
+    public String getGroup() {
+        return group;
     }
 
     public void setProtocolCodecFactory(ProtocolCodecFactory protocolCodecFactory) {
@@ -266,7 +275,7 @@ public class SmartQClient {
      */
     private synchronized void subscribe() throws InterruptedException {
         if (responseHandler != null) {
-            send(new Command(Type.SUBSCRIBE, threads));
+            send(new Command(Type.SUBSCRIBE, threads, group));
         }
     }
 

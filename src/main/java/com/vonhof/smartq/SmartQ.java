@@ -302,7 +302,7 @@ public class SmartQ<U>  {
             return false;
         }
 
-        log.debug("Cancelled task");
+        log.debug("Cancelled task: " + task.getId());
         getStore().remove(task);
         task.setEnded(WatchProvider.currentTime());
 
@@ -382,8 +382,22 @@ public class SmartQ<U>  {
         interrupted = true;
         store.signalChange();
     }
-    
+
+    public Task acquire() throws InterruptedException {
+        return acquire(null);
+    }
+
     public Task acquire(final String tag) throws InterruptedException {
+        Task t = getNext(tag);
+        markAsRunning(t);
+        return t;
+    }
+
+    public Task getNext() throws InterruptedException {
+        return getNext(null);
+    }
+    
+    public Task getNext(final String tag) throws InterruptedException {
 
             interrupted = false;
             Task selectedTask = null;
@@ -430,9 +444,8 @@ public class SmartQ<U>  {
 
                             if (taskLookup != null) {
                                 if (log.isDebugEnabled()) {
-                                    log.debug(String.format("Found task %s for tag %s in %s ms", taskLookup.getId(), tag, timeTaken));
+                                    log.debug(String.format("Found task %s for tag %s, group %s in %s ms", taskLookup.getId(), tag, taskLookup.getGroup(), timeTaken));
                                 }
-                                acquireTask(taskLookup);
                             } else if (log.isDebugEnabled()) {
                                 log.debug(String.format("Found no tasks for tag %s in %s ms", tag, timeTaken));
                             }
@@ -513,10 +526,6 @@ public class SmartQ<U>  {
     }
 
 
-    public Task acquire() throws InterruptedException {
-       return acquire(null);
-    }
-
     public void requeueAll() throws InterruptedException {
         new Callable<Object>() {
             @Override
@@ -543,7 +552,7 @@ public class SmartQ<U>  {
 
     }
 
-    private void acquireTask(Task t) {
+    public void markAsRunning(Task t) {
         t.setState(Task.State.RUNNING);
         t.setStarted(WatchProvider.currentTime());
         log.trace("Moving task to running pool");
@@ -556,7 +565,7 @@ public class SmartQ<U>  {
 
     }
 
-    public Task acquireTask(final UUID taskId) throws Exception {
+    public Task markAsRunning(final UUID taskId) throws Exception {
         return new Callable<Task>() {
             @Override
             public Task call() throws Exception {
@@ -565,7 +574,7 @@ public class SmartQ<U>  {
                     return null;
                 }
 
-                acquireTask(t);
+                markAsRunning(t);
                 return t;
             }
         }.call();
@@ -575,4 +584,6 @@ public class SmartQ<U>  {
     public void setEstimateForTaskType(String type, long estimate) {
         getStore().setTaskTypeEstimate(type, estimate);
     }
+
+
 }

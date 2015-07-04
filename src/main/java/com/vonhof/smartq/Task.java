@@ -7,6 +7,7 @@ import java.util.*;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Task<T> {
+    public static final String GROUP_DEFAULT = "default";
 
     private UUID id;
     private State state = State.PENDING;
@@ -21,6 +22,7 @@ public class Task<T> {
     private String referenceId;
     private Map<String,Integer> tags = new HashMap<String, Integer>();
     private String type;
+    private String group = GROUP_DEFAULT;
 
     public Task() {
         this("none");
@@ -38,6 +40,7 @@ public class Task<T> {
         this.tags = task.tags;
         this.type = task.type;
         this.data = task.data;
+        this.group = task.group;
     }
 
     public static Task copyNoDate(Task task) {
@@ -52,12 +55,8 @@ public class Task<T> {
         out.referenceId = task.referenceId;
         out.tags = task.tags;
         out.type = task.type;
+        out.group = task.group;
         return out;
-    }
-
-    public Task withPriority(int priority) {
-        setPriority(priority);
-        return this;
     }
 
     public Task(String tag) {
@@ -67,12 +66,31 @@ public class Task<T> {
         this.type = tag;
     }
 
+    public Task withGroup(String group) {
+        setGroup(group);
+        return this;
+    }
+
+    public Task withPriority(int priority) {
+        setPriority(priority);
+        return this;
+    }
+
+
     @JsonIgnore
     public void reset() {
         this.created = WatchProvider.currentTime();
         started = 0;
         ended = 0;
         state = State.PENDING;
+    }
+
+    public String getGroup() {
+        return group;
+    }
+
+    public void setGroup(String group) {
+        this.group = group;
     }
 
     public void setId(UUID id) {

@@ -13,11 +13,8 @@ import org.junit.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -82,7 +79,7 @@ public class ClientServerTest {
 
         synchronized (msgHandler) {
             if (!msgHandler.done) {
-                msgHandler.wait(1000);
+                msgHandler.wait();
             }
         }
 
@@ -324,10 +321,11 @@ public class ClientServerTest {
         assertEquals(0, queue.queueSize());
         assertEquals(1, queue.runningCount());
 
+        Thread.sleep(100);
         msgHandler.wakeUp();
         Thread.sleep(100);
         msgHandler.setThrowing(false);
-        Thread.sleep(200);
+        Thread.sleep(100);
 
 
         Task refreshedTask = queue.getStore().get(task.getId());
@@ -530,6 +528,72 @@ public class ClientServerTest {
     }
 
     @Test
+    public void clients_can_subscribe_to_groups() throws Exception {
+        final SmartQServer server = makeServer();
+
+        final MultiClientMessageHandler msgHandler = new MultiClientMessageHandler();
+
+        final SmartQClient group1Subscriber = server.makeClient(msgHandler);
+        final SmartQClient group2Subscriber = server.makeClient(msgHandler);
+        final SmartQClient defaultSubscriber = server.makeClient(msgHandler);
+
+        group1Subscriber.setGroup("group1");
+        group2Subscriber.setGroup("group2");
+
+        group1Subscriber.setAutoAcknowledge(true);
+        group2Subscriber.setAutoAcknowledge(true);
+        defaultSubscriber.setAutoAcknowledge(true);
+
+        final Task task1 = new Task("test").withGroup("group1");
+        final Task task2 = new Task("test").withGroup("group2");
+        final Task task3 = new Task("test").withGroup("other");
+        final Task task4 = new Task("test").withGroup("default");
+
+        server.getQueue().submit(task1, task2, task3, task4);
+
+        assertEquals(4, server.getQueue().queueSize());
+
+        server.listen();
+
+        Thread.sleep(100);
+
+        assertEquals(0, server.getSubscriberCount());
+        assertEquals(0, server.getClientCount());
+
+        group1Subscriber.connect();
+        group2Subscriber.connect();
+        defaultSubscriber.connect();
+
+        Thread.sleep(100);
+
+        assertEquals(3, server.getSubscriberCount());
+        assertEquals(3, server.getClientCount());
+
+        if (msgHandler.done < 4) {
+            msgHandler.waitForTasks();
+        }
+
+        assertEquals(4, msgHandler.done);
+
+        Thread.sleep(100);
+
+        assertEquals(0, server.getQueue().queueSize());
+        assertEquals(0, server.getQueue().runningCount());
+
+
+
+        assertEquals(msgHandler.clientMap.get(task1.getId()), group1Subscriber);
+        assertEquals(msgHandler.clientMap.get(task2.getId()), group2Subscriber);
+        assertEquals(msgHandler.clientMap.get(task3.getId()), defaultSubscriber);
+        assertEquals(msgHandler.clientMap.get(task4.getId()), defaultSubscriber);
+
+        group1Subscriber.close();
+        group2Subscriber.close();
+        defaultSubscriber.close();
+        server.close();
+    }
+
+    @Test
     public void large_tasks_are_supported() throws Exception {
         final SmartQServer server = makeServer();
 
@@ -574,24 +638,25 @@ public class ClientServerTest {
 
     public static class MultiClientMessageHandler implements SmartQClientMessageHandler {
 
-        private int done = 0;
-        private List<UUID> taskIds = new ArrayList<UUID>();
-        private Map<UUID,SmartQClient> clientMap = new HashMap<UUID, SmartQClient>();
+        private volatile int done = 0;
+        private List<UUID> taskIds = Collections.synchronizedList(new ArrayList<UUID>());
+        private Map<UUID,SmartQClient> clientMap = new ConcurrentHashMap<>();
 
         @Override
         public void taskReceived(SmartQClient client, Task task) {
-            try {
-                clientMap.put(task.getId(), client);
-                taskIds.add(task.getId());
-                Thread.sleep(100); //Do some work
-                done++;
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                synchronized (this) {
+            synchronized (this) {
+                try {
+                    clientMap.put(task.getId(), client);
+                    taskIds.add(task.getId());
+                    done++;
+                } finally {
                     notifyAll();
                 }
             }
+        }
+
+        public synchronized void waitForTasks() throws InterruptedException {
+            wait(5000);
         }
     }
 

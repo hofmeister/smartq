@@ -906,16 +906,6 @@ public class SmartQTest {
 
         assertEquals(11488950L , eta );
         assertEquals(17300 , totalSize);
-
-        if (queue.getStore() instanceof PostgresTaskStore) {
-            assertTrue("For a factor = 100 this should be around less than 2500ms", timeTaken < 2500L);
-        } else if (queue.getStore() instanceof MemoryTaskStore) {
-            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 500L);
-        } else if (queue.getStore() instanceof WriteThroughTaskStore) {
-            assertTrue("For a factor = 100 this should be around less than 500ms", timeTaken < 500L);
-        } else {
-            fail("Unknown task store");
-        }
     }
 
     private static class ThreadedWaiter extends Thread {

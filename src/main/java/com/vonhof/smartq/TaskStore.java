@@ -43,6 +43,10 @@ public interface TaskStore {
 
     public long runningCount(String type) throws InterruptedException;
 
+    long queueSizeForGroup(String group);
+
+    long runningCountForGroup(String type);
+
     public Set<String> getTags() throws InterruptedException;
 
     public <U> U isolatedChange(Callable<U> callable) throws InterruptedException;

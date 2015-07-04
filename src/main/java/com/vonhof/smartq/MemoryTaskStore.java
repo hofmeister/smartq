@@ -16,10 +16,15 @@ public class MemoryTaskStore implements TaskStore {
     private final List<Task> queuedTasks = new LinkedList<Task>();
     private final List<Task> runningTasks = new LinkedList<Task>();
     private final List<Task> failedTasks = new LinkedList<Task>();
+    private final ReferenceMap referenceMap = new ReferenceMap();
+
     private final CountMap<String> runningTypeCount = new CountMap<>();
     private final CountMap<String> queuedTypeCount = new CountMap<>();
     private EstimateMap<String> typeEstimate = new EstimateMap<>();
-    private final ReferenceMap referenceMap = new ReferenceMap();
+
+
+    private final CountMap<String> runningGroupCount = new CountMap<>();
+    private final CountMap<String> queuedGroupCount = new CountMap<>();
 
     private final Map<String, Integer> taskTagRateLimits = new HashMap<>();
     private final Map<String, Integer> taskTagRetryLimits = new HashMap<>();
@@ -46,7 +51,8 @@ public class MemoryTaskStore implements TaskStore {
                 failedTasks.clear();
                 runningTypeCount.clear();
                 queuedTypeCount.clear();
-
+                runningGroupCount.clear();
+                queuedGroupCount.clear();
                 return null;
             }
         });
@@ -126,6 +132,14 @@ public class MemoryTaskStore implements TaskStore {
         boolean queuedRemoved = queuedTasks.remove(task);
         boolean runningRemoved = runningTasks.remove(task);
 
+        if (runningRemoved) {
+            runningGroupCount.decrement(task.getGroup(), 1);
+        }
+
+        if (queuedRemoved) {
+            queuedGroupCount.decrement(task.getGroup(), 1);
+        }
+
         for(String tag : (Set<String>)task.getTagSet()) {
             if (runningRemoved) {
                 runningTypeCount.decrement(tag, 1);
@@ -148,6 +162,8 @@ public class MemoryTaskStore implements TaskStore {
             task.setState(State.PENDING);
             this.tasks.put(task.getId(), task);
             referenceMap.add(task);
+            queuedGroupCount.increment(task.getGroup(), 1);
+
             for(String tag : (Set<String>) task.getTagSet()) {
                 queuedTypeCount.increment(tag,1);
             }
@@ -160,14 +176,22 @@ public class MemoryTaskStore implements TaskStore {
     @Override
     public synchronized void run(Task task) {
         task.setState(State.RUNNING);
-        queuedTasks.remove(task);
+        boolean queuedRemoved = queuedTasks.remove(task);
         runningTasks.add(task);
 
-        for(String tag : (Set<String>)task.getTagSet()) {
-            queuedTypeCount.decrement(tag, 1);
-            runningTypeCount.increment(tag,1);
+        if (queuedRemoved) {
+            queuedGroupCount.decrement(task.getGroup(), 1);
         }
 
+        runningGroupCount.increment(task.getGroup(), 1);
+
+        for(String tag : (Set<String>)task.getTagSet()) {
+            if (queuedRemoved) {
+                queuedTypeCount.decrement(tag, 1);
+            }
+
+            runningTypeCount.increment(tag,1);
+        }
 
         sort(runningTasks);
     }
@@ -209,6 +233,8 @@ public class MemoryTaskStore implements TaskStore {
                 tasks.remove(task.getId());
                 iterator.remove();
 
+                queuedGroupCount.decrement(task.getGroup(), 1);
+
                 for(String tag : (Set<String>)task.getTagSet()) {
                     queuedTypeCount.decrement(tag,1);
                 }
@@ -221,6 +247,8 @@ public class MemoryTaskStore implements TaskStore {
             if (referenceId.equals(runningTask.getReferenceId())) {
                 tasks.remove(runningTask.getId());
                 runIterator.remove();
+
+                runningGroupCount.decrement(runningTask.getGroup(), 1);
 
                 for(String tag : (Set<String>)runningTask.getTagSet()) {
                     runningTypeCount.decrement(tag,1);
@@ -326,12 +354,22 @@ public class MemoryTaskStore implements TaskStore {
     }
 
     @Override
-    public long queueSize(String type) {
+     public long queueSize(String type) {
         return queuedTypeCount.get(type);
     }
 
     @Override
     public long runningCount(String type) {
+        return runningTypeCount.get(type);
+    }
+
+    @Override
+    public long queueSizeForGroup(String group) {
+        return queuedGroupCount.get(group);
+    }
+
+    @Override
+    public long runningCountForGroup(String type) {
         return runningTypeCount.get(type);
     }
 

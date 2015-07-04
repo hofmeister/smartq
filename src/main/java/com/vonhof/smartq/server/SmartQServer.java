@@ -113,15 +113,6 @@ public class SmartQServer {
     }
 
     public synchronized void close()  {
-        acceptor.unbind();
-        acceptor.dispose(true);
-        acceptor = null;
-
-        if (log.isInfoEnabled()) {
-            log.info(String.format("Stopped listening on " + address));
-        }
-        queue.interrupt();
-
         if (taskEmitter != null) {
             taskEmitter.interrupt();
 
@@ -133,6 +124,15 @@ public class SmartQServer {
             taskEmitter = null;
         }
 
+        acceptor.unbind();
+        acceptor.dispose(true);
+        acceptor = null;
+
+        if (log.isInfoEnabled()) {
+            log.info(String.format("Stopped listening on " + address));
+        }
+        queue.interrupt();
+
         timer.cancel();
         timer.purge();
 
@@ -140,8 +140,9 @@ public class SmartQServer {
 
 
     private class RequestHandler extends IoHandlerAdapter {
-        private final Map<SocketAddress,List<UUID>> clientTask = new ConcurrentHashMap<SocketAddress, List<UUID>>();
-        private final Map<SocketAddress,Integer> clientTaskLimit = new ConcurrentHashMap<SocketAddress, Integer>();
+        private final Map<SocketAddress,List<UUID>> clientTask = new ConcurrentHashMap<>();
+        private final Map<SocketAddress,Integer> clientTaskLimit = new ConcurrentHashMap<>();
+
         private final Set<Long> sessionReady = new ConcurrentHashSet<Long>();
         private final Set<UUID> taskIds = new ConcurrentHashSet<UUID>();
 
@@ -174,13 +175,17 @@ public class SmartQServer {
             return 1;
         }
 
+        private void clientTasksChanged() {
+            synchronized (clientTask) {
+                clientTask.notifyAll();
+            }
+        }
+
         public void registerTask(IoSession session, UUID id) {
             clientTask.get(session.getRemoteAddress()).add(id);
             taskIds.add(id);
 
-            synchronized (clientTask) {
-                clientTask.notifyAll();
-            }
+            clientTasksChanged();
         }
 
         public int getTaskCountForSession(IoSession session) {
@@ -191,9 +196,7 @@ public class SmartQServer {
             clientTask.get(session.getRemoteAddress()).remove(id);
             taskIds.remove(id);
 
-            synchronized (clientTask) {
-                clientTask.notifyAll();
-            }
+            clientTasksChanged();
         }
 
         public void unregisterTask(UUID id) {
@@ -206,9 +209,7 @@ public class SmartQServer {
 
             taskIds.remove(id);
 
-            synchronized (clientTask) {
-                clientTask.notifyAll();
-            }
+            clientTasksChanged();
         }
 
         public boolean isReady(IoSession session) {
@@ -230,10 +231,11 @@ public class SmartQServer {
             return tasks == null || (tasks.size() >= getTaskLimit(session));
         }
 
-        public void sendTask(IoSession session, Task task) throws InterruptedException {
+        public boolean sendTask(IoSession session, Task task) throws InterruptedException {
             if (!isAlive(session)) {
-                return;
+                return false;
             }
+
             while(isAlive(session) && isBusy(session)) {
                 if (clientTask.get(session.getRemoteAddress()).contains(task.getId())) {
                     if (log.isDebugEnabled()) {
@@ -250,15 +252,18 @@ public class SmartQServer {
                     log.debug("Waiting for client to become available: " + session.getRemoteAddress());
                 }
             }
+
             if (!isAlive(session)) {
-                return;
+                return false;
             }
 
             if (log.isDebugEnabled()) {
                 log.debug("Sending task to client: " + session.getRemoteAddress() + " - " + task.getId());
             }
+
             registerTask(session, task.getId());
             session.write(task);
+            return true;
         }
 
         public void endTask(IoSession session, UUID taskId) {
@@ -266,10 +271,7 @@ public class SmartQServer {
                 return;
             }
             unregisterTask(session, taskId);
-
-            synchronized (taskEmitter) {
-                taskEmitter.notifyAll();
-            }
+            taskEmitter.checkForSessions();
         }
 
         private void handleCommand(IoSession session, Command cmd) throws Exception {
@@ -286,13 +288,13 @@ public class SmartQServer {
                             log.debug("Reacquire task: " + taskId);
                         }
                         registerTask(session, taskId);
-                        queue.acquireTask(taskId);
+                        queue.markAsRunning(taskId);
                     }
 
                     break;
                 case SUBSCRIBE:
                     if (log.isTraceEnabled()) {
-                        log.trace("Client subscribing: " + session.getId());
+                        log.trace("Client subscribing. (SessionId: " + session.getId() + ")");
                     }
 
                     if (!sessionReady.contains(session.getId())) {
@@ -301,15 +303,22 @@ public class SmartQServer {
                             clientTaskLimit.put(session.getRemoteAddress(), (Integer) args[0]);
                         }
 
-                        sessionReady.add(session.getId());
-                        synchronized (taskEmitter) {
-                            taskEmitter.notifyAll();
+                        session.setAttribute("GROUP", Task.GROUP_DEFAULT);
+                        if (args.length > 1 && args[1] instanceof String) {
+                            session.setAttribute("GROUP", args[1]);
                         }
+
+                        sessionReady.add(session.getId());
+                        taskEmitter.checkForSessions();
 
                         queue.setSubscribers(subscriberCount.addAndGet(clientTaskLimit.get(session.getRemoteAddress())));
 
                         if (log.isInfoEnabled()) {
-                            log.info(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: %s",session.getRemoteAddress(), getTaskLimit(session), queue.getSubscribers()));
+                            log.info(String.format("Client started subscribing to tasks: %s with %s threads . Subscribers: %s [Group: %s]",
+                                    session.getRemoteAddress(),
+                                    getTaskLimit(session),
+                                    queue.getSubscribers(),
+                                    session.getAttribute("GROUP")));
                         }
                     } else {
                         if (log.isInfoEnabled()) {
@@ -317,13 +326,8 @@ public class SmartQServer {
                         }
                     }
 
-                    synchronized (clientTask) {
-                        clientTask.notifyAll();
-                    }
-
-                    synchronized (taskEmitter) {
-                        taskEmitter.notifyAll();
-                    }
+                    clientTasksChanged();
+                    taskEmitter.checkForSessions();
 
                     break;
                 case ACK:
@@ -393,9 +397,7 @@ public class SmartQServer {
                 }
             }
 
-            synchronized (taskEmitter) {
-                taskEmitter.notifyAll();
-            }
+            taskEmitter.checkForSessions();
         }
 
         @Override
@@ -464,73 +466,119 @@ public class SmartQServer {
             super("smartq-task-emitter");
         }
 
-        private IoSession getNextSession() throws InterruptedException {
+        private boolean anySessionsAvailable()  {
+            LinkedList<IoSession> managedSessions = new LinkedList<>(acceptor.getManagedSessions().values());
 
+            if (managedSessions.isEmpty()) {
+                return false;
+            }
 
-            while(true) {
-                LinkedList<IoSession> managedSessions = new LinkedList<>(acceptor.getManagedSessions().values());
-
-                while (managedSessions.size() < 1) {
-                    synchronized (this) {
-                        wait();
-                    }
-                    managedSessions = new LinkedList<>(acceptor.getManagedSessions().values());
-                }
-
-
-                int leastBusySessionCount = -1;
-                IoSession session = null;
-
-                for(IoSession managedSession :  managedSessions) {
-
-                    if (requestHandler.isBusy(managedSession) ||
-                            !requestHandler.isReady(managedSession)) {
-                        continue;
-                    }
-
-                    int taskCount = requestHandler.getTaskCountForSession(managedSession);
-                    if (taskCount < 1) {
-                        session = managedSession;
-                        break;
-                    }
-
-                    if (leastBusySessionCount == -1 ||
-                            leastBusySessionCount >  taskCount) {
-                        session = managedSession;
-                        leastBusySessionCount = taskCount;
-                    }
-                }
-
-                if (session == null) {
-                    synchronized (this) {
-                        if (log.isInfoEnabled()) {
-                            log.info("Waiting for sessions to become available");
-                        }
-                        wait(15000);
-                    }
+            for (IoSession managedSession : managedSessions) {
+                if (requestHandler.isBusy(managedSession) ||
+                        !requestHandler.isReady(managedSession)) {
                     continue;
                 }
 
-                if (requestHandler.isReady(session)) {
-                    return session;
+                return true;
+            }
+
+            return false;
+        }
+
+        private IoSession getNextSession(String group) throws InterruptedException {
+            LinkedList<IoSession> managedSessions = new LinkedList<>(acceptor.getManagedSessions().values());
+
+            if (managedSessions.isEmpty()) {
+                return null;
+            }
+
+            int leastBusySessionCount = -1;
+            IoSession session = null;
+
+            for (IoSession managedSession : managedSessions) {
+
+                if (!group.equals(managedSession.getAttribute("GROUP"))) {
+                    continue;
+                }
+
+                if (requestHandler.isBusy(managedSession) ||
+                        !requestHandler.isReady(managedSession)) {
+                    continue;
+                }
+
+                int taskCount = requestHandler.getTaskCountForSession(managedSession);
+                if (taskCount < 1) {
+                    session = managedSession;
+                    break;
+                }
+
+                if (leastBusySessionCount == -1 ||
+                        leastBusySessionCount > taskCount) {
+                    session = managedSession;
+                    leastBusySessionCount = taskCount;
+                }
+            }
+
+            if (session != null &&
+                    requestHandler.isReady(session)) {
+                return session;
+            }
+
+            if (!group.equals(Task.GROUP_DEFAULT)) {
+                return getNextSession(Task.GROUP_DEFAULT);
+            }
+
+            return null;
+        }
+
+        public void checkForSessions() {
+            synchronized (this) {
+                notifyAll();
+            }
+        }
+
+        private void waitForAnySession() throws InterruptedException {
+            while(true) {
+                synchronized (this) {
+                    if (log.isInfoEnabled()) {
+                        log.info("Waiting for sessions to become available");
+                    }
+                    wait(15000);
+                }
+
+                if (anySessionsAvailable()) {
+                    break;
                 }
             }
         }
+
+
 
         @Override
         public void run() {
             try {
                 while(!interrupted()) {
 
-                    IoSession session = getNextSession();
+                    if (!anySessionsAvailable()) {
+                        waitForAnySession();
+                        continue;
+                    }
 
                     try {
-                        requestHandler.sendTask(session, queue.acquire());
+                        Task task = queue.acquire();
+                        IoSession session = getNextSession(task.getGroup());
+                        if (session == null) {
+                            queue.cancel(task, true);
+                            continue;
+                        }
+                        requestHandler.sendTask(session, task);
                     } catch (AcquireInterruptedException ex) {
                         continue;
                     }
                 }
             } catch (InterruptedException e) {}
         }
+
+
     }
 }

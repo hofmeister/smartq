@@ -191,13 +191,23 @@ public class WriteThroughTaskStore implements TaskStore {
     }
 
     @Override
-    public long queueSize(String type) throws InterruptedException {
-        return memStore.queueSize(type);
+    public long queueSize(String group) throws InterruptedException {
+        return memStore.queueSize(group);
     }
 
     @Override
-    public long runningCount(String type) throws InterruptedException {
-        return memStore.runningCount(type);
+    public long runningCount(String group) throws InterruptedException {
+        return memStore.runningCount(group);
+    }
+
+    @Override
+    public long queueSizeForGroup(String group) {
+        return memStore.queueSizeForGroup(group);
+    }
+
+    @Override
+    public long runningCountForGroup(String group) {
+        return memStore.runningCountForGroup(group);
     }
 
     @Override

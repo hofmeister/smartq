@@ -8,6 +8,7 @@ CREATE TABLE %tableName%
   "order" SERIAL,
   referenceid character varying(45),
   "type" character varying(65),
+  "group" character varying(65),
   CONSTRAINT %tableName%_pkey PRIMARY KEY (id)
 )
 WITH (
@@ -26,6 +27,11 @@ CREATE INDEX %tableName%_state_priority_idx
   ON %tableName%
   USING btree
   (state DESC, priority DESC, created ASC, "order" ASC);
+
+CREATE INDEX %tableName%_group_priority_idx
+  ON %tableName%
+  USING btree
+  ("group" DESC, priority DESC, created ASC, "order" ASC);
 
 
 CREATE TABLE %tableName%_tags
